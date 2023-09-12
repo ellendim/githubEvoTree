@@ -1,0 +1,190 @@
+---
+title: "Comparative heatmap - Asp-Scots"
+author: "Ellen Dimmen Chapple"
+date: "2023-09-05"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r packages, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gplots)
+library(beepr)
+library(reshape2)
+library(pheatmap)
+library(ComplexHeatmap)
+
+```
+
+
+# Loading the expression data
+
+```{r expr data}
+# AspWood
+asp_expr_data <- read.delim ("Data/DATA/AspWood_transcriptomics.txt")
+
+
+# ScotsWood (Pinus Sylvestris, Scots Pine, Furu)
+scots_expr_data <- read.delim("Data/DATA/ScotsWood_transcriptomics.txt")
+
+cat("AspWood - # of genes: ", dim(asp_expr_data)[1],"\nScotsWood - # of genes: ", dim(scots_expr_data)[1])
+```
+
+
+```{r comp table}
+
+load("~/NMBU/M60-BIAS/EvoTree/Data/DATA/comparison-Asp-Scots-pearsonMR0.03no-table.RData")
+
+```
+
+# Selecting ortholog pairs with lowest max p-value
+
+```{r p.val }
+
+asp_scots_p.val <- comparison_table%>%
+  ungroup() %>% 
+  select(Species1, Species2,OrthoGroup, Max.p.val) %>%
+  mutate_at("Max.p.val", as.numeric) %>% 
+  group_by(OrthoGroup) %>% 
+  arrange(Max.p.val,.by_group = T) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  distinct(Species1, .keep_all = T) %>% 
+  distinct( Species2, .keep_all = T)
+# Check the number of unique groups in test set.
+
+cat("Number of orthogroups after removing genes appearing in multiple groups: ", length(unique(asp_scots_p.val$OrthoGroup)) )
+
+cat("Number of duplicated genes in Asp: ", sum(duplicated(asp_scots_p.val$Species1)), "\nNumber of duplicated genes in Scots: ",sum(duplicated(asp_scots_p.val$Species2)))
+
+```
+
+
+# Filtering the expression data
+
+```{r filtering}
+
+# ----------------- ASP ------------------
+# Filter the genes in the expression tables to only include the genes in the 'lowest_p_value_s' df.
+asp_expr_filt_comp <- asp_expr_data %>% 
+  filter(Genes %in% asp_scots_p.val$Species1) %>% 
+  select(contains("A1."))
+
+sum(duplicated(asp_expr_filt_comp$Genes))
+
+# New data frame without first row (genes)
+asp_expr_sort_comp <- asp_expr_filt_comp[,-1]
+# Add genes as row names 
+rownames(asp_expr_sort_comp) <- asp_expr_filt_comp$Genes
+
+# Order the rows
+asp_expr_sort_comp <-asp_expr_sort_comp[order(match (rownames(asp_expr_sort_comp), asp_scots_p.val$Species1)), , drop = F]
+
+sum(duplicated(asp_expr_sort_comp$Genes))
+
+# ----------------- Scots ------------------ 
+
+
+scots_expr_filt_comp <- scots_expr_data %>% 
+  filter(Genes %in% asp_scots_p.val$Species2) %>% 
+  select(contains("T1."))
+
+sum(duplicated(scots_expr_filt_comp$Genes))
+
+# New data frame without first row (genes)
+scots_expr_sort_comp <- scots_expr_filt_comp[,-1]
+
+# Add genes as row names 
+rownames(scots_expr_sort_comp) <- scots_expr_filt_comp$Genes
+
+# Order the rows
+scots_expr_sort_comp <-scots_expr_sort_comp[order(match (rownames(scots_expr_sort_comp), asp_scots_p.val$Species2)), , drop = F]
+
+sum(duplicated(scots_expr_filt_comp$Genes))
+
+```
+
+
+
+```{r correlataion and heatmap}
+
+corr_matrix <- round(cor(scots_expr_sort_comp,asp_expr_sort_comp, method = "pearson"), 4)
+
+```
+
+
+```{r}
+# Alternative method using ComplexHeatmap::Heatmap.
+
+heat_2 <-  Heatmap(corr_matrix, column_title = "Asp-Scots",
+                    width = ncol(corr_matrix)*unit(5, "mm"), 
+    height = nrow(corr_matrix)*unit(5, "mm"),
+    row_order = 1:ncol(scots_expr_sort_comp),
+    column_order = 1:ncol(asp_expr_sort_comp),
+    name = "corr") 
+heat_2
+
+```
+
+# Within species
+
+
+
+```{r}
+
+scots_T1 <- scots_expr_data %>% 
+  filter(Genes %in% asp_scots_p.val$Species2) %>% 
+  select(contains("T1."))
+
+scots_T2 <- scots_expr_data %>% 
+  filter(Genes %in% asp_scots_p.val$Species2) %>% 
+  select(contains("T2."))
+
+
+# New data frame without first row (genes)
+scots_T1_sort <- scots_T1[,-1]
+scots_T2_sort <- scots_T2[,-1]
+
+# Add genes as row names 
+rownames(scots_T1_sort) <- scots_T1_sort$Genes
+rownames(scots_T2_sort) <- scots_T2_sort$Genes
+
+
+# Order the rows
+scots_T1_sort <-scots_T1_sort[order(match (rownames(scots_T1_sort), asp_scots_p.val$Species2)), , drop = F]
+
+scots_T2_sort <-scots_T2_sort[order(match (rownames(scots_T2_sort), asp_scots_p.val$Species2)), , drop = F]
+
+
+```
+
+
+```{r}
+corr_matrix_2 <- round(cor(scots_T1_sort, scots_T2_sort, method = "pearson"), 4)
+
+
+heat_2 <-  Heatmap(corr_matrix_2, column_title = "Scots - T1 vs. T2",
+                    width = ncol(corr_matrix_2)*unit(5, "mm"), 
+    height = nrow(corr_matrix_2)*unit(5, "mm"),
+    row_order = 1:ncol(scots_T1_sort),
+    column_order = 1:ncol(scots_T2_sort),
+    name = "corr") 
+heat_2
+
+
+
+
+```
+
+
+
+
+
+
+
+
+

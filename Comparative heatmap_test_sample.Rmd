@@ -1,0 +1,383 @@
+---
+title: "Comparative heatmap"
+author: "Ellen Dimmen Chapple"
+date: "2023-08-25"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: paper
+editor_options:
+  chunk_output_type: console
+---
+
+```{r Packages, message=FALSE, warning=FALSE, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gplots)
+library(beepr)
+library(reshape2)
+
+```
+
+
+# Flow
+
+
+- Load expression datasets for Aspen (AspWood) and Norway Spruce (NorWood).
+
+- Load comparison table which contains the various genes within each ortholog group for both species. The p-value for each    ortholog pair is calculated (both directions), and then the highest of these two is used for 'Max.p.val'.
+
+- Extract the lowest 'Max.p.val.' from each
+
+- create a correlation matrix for each gene
+
+- map the matrix as a heatmap
+
+
+
+# Loading the transcription data
+
+
+
+```{r}
+# AspWood
+asp_expr_data <- read.delim ("Data/DATA/AspWood_transcriptomics.txt")
+
+
+# NorWood
+nor_expr_data <- read.delim("Data/DATA/NorWood_transcriptomics.txt")
+
+cat("AspWood - # of genes: ", dim(asp_expr_data)[1],"\nNorWood - # of genes: ", dim(nor_expr_data)[1])
+```
+
+
+```{r}
+# Orthogroups
+# 
+# ortho_groups <- read.delim("Data/DATA/Orthogroups.100323.tsv", sep = "\t")
+# 
+# # Aspen = Poptre (Populus tremula)
+# # Norway Spruce = Picabi (Picea abies)
+# 
+# OG_filt <- ortho_groups %>% 
+#   rename(Aspen = Poptre.SHORT.pep, Norway_Spruce = Picabi.SHORT.pep) %>% 
+#   select(Orthogroup,Aspen, Norway_Spruce) %>% filter(Aspen != "", Norway_Spruce != "") %>%
+#   separate_rows(Aspen, sep = ", ", convert = FALSE) %>%
+#   separate_rows(Norway_Spruce, sep = ", ", convert = FALSE)%>%
+#     mutate(Aspen = gsub("\\.\\d\\.p\\d$", "", Aspen)) %>% mutate(Norway_Spruce = gsub("\\.p\\d$", "", Norway_Spruce)) %>%
+#     mutate(Aspen = gsub("Poptre_", "", Aspen)) %>%
+#     group_by(Aspen, Norway_Spruce, Orthogroup) #%>%
+    #slice(1)# why this?
+
+```
+
+# Comparison table
+
+
+- Need to isolate the lowest p-value for each species in each OG.
+- First select the 3 columns
+- Then, for each OG, select the gene with highest max p-value
+length(unique(comparison_table$OrthoGroup)) --> 7354 ortho groups
+
+
+```{r loaded comp tbl}
+load("~/NMBU/M60-BIAS/EvoTree/Data/DATA/comparison-Asp-Nor-pearsonMR0.03no-table.RData")
+```
+
+
+
+
+# Test on smaller data set - 2 species
+
+
+```{r test-loop_1}
+# 
+# # Create a small test data set grouped only by Orthogroup with only one species.
+# set.seed(3)
+# 
+# test_loop <- comparison_table%>%
+#   ungroup() %>% 
+#   select(Species1, OrthoGroup, Max.p.val) %>%
+#   mutate_at("Max.p.val", as.numeric) %>% 
+#   sample_n(size = 100, replace = F)%>%
+#   group_by(OrthoGroup) 
+# 
+# # Check the number of unique groups in test set.
+# length(unique(test_loop$OrthoGroup))  
+# 
+# # Create a vector with the unique Orthogroups
+# OGs <- unique(test_loop$OrthoGroup)
+# 
+# # For each unique group, select lowest p-value, add to new df.
+# 
+# for(x in OGs){
+#   lowest_p_value <- test_loop %>% 
+#   slice(which.min(Max.p.val))
+# }
+# 
+# # Check that the number of groups is the same as in test data set.
+# length(unique(lowest_p_value$OrthoGroup))
+# beep(2)
+```
+
+
+```{r test-loop_both }
+# Create a small test data set grouped only by Orthogroup with only both species.
+set.seed(3)
+
+test_loop_both <- comparison_table%>%
+  ungroup() %>% 
+  select(Species1, Species2,OrthoGroup, Max.p.val) %>%
+  mutate_at("Max.p.val", as.numeric) %>%
+  sample_n(size = 500, replace = F)%>% 
+  unique() %>% 
+  group_by(OrthoGroup) %>% 
+  arrange(Max.p.val,.by_group = T) %>% 
+  slice(1)
+
+# Check the number of unique groups in test set.
+length(unique(test_loop_both$OrthoGroup))  
+
+
+# # Create a vector with the unique Orthogroups + vector to index the columns.
+# OGs_2 <- unique(test_loop_both$OrthoGroup)
+# species <- unique(c(1,2))
+# 
+# # For each unique group, select lowest p-value, add to new df.
+# for(x in OGs_2){
+#   for(i in species){ # Need something to stop duplicated rows
+#   lowest_p_value_2 <- test_loop_both %>% 
+#   slice(which.min(Max.p.val))
+# }
+# }
+# # Check that the number of groups is the same as in test data set.
+# length(unique(lowest_p_value_2$OrthoGroup))
+# sum(duplicated(lowest_p_value_2))
+# 
+# beep(2)
+
+```
+
+
+
+
+```{r test data filtering }
+# ----------------- ASP ------------------
+# Filter the genes in the expression tables to only include the genes in the 'lowest_p_value_s' df.
+asp_expr_filt <- asp_expr_data %>% 
+  filter(Genes %in% test_loop_both$Species1)
+
+# New data frame without first row (genes)
+asp_expr_sort <- asp_expr_filt[,-1]
+# Add genes as row names 
+rownames(asp_expr_sort) <- asp_expr_filt$Genes
+
+# Order the rows
+asp_expr_sort <-asp_expr_sort[order(match (rownames(asp_expr_sort), test_loop_both$Species1)), , drop = F]
+
+sum(duplicated(asp_expr_sort))
+
+# ----------------- Nor ------------------ 
+
+
+nor_expr_filt <- nor_expr_data %>% filter(Genes %in% test_loop_both$Species2)
+
+
+# New data frame without first row (genes)
+nor_expr_sort <- nor_expr_filt[,-1]
+# Add genes as row names 
+rownames(nor_expr_sort) <- nor_expr_filt$Genes
+
+# Order the rows
+nor_expr_sort <-nor_expr_sort[order(match (rownames(nor_expr_sort), test_loop_both$Species2)), , drop = F]
+
+sum(duplicated(nor_expr_sort))
+
+```
+
+
+
+```{r test data corr and heatmap}
+
+
+corr_matrix <- round(cor(asp_expr_sort, nor_expr_sort, method = "pearson"), 2)
+
+# Need to order the samples. We know that the clusters more or less fall into a sequential order.
+
+#Aspen
+dist_1 <- dist(t(asp_expr_sort), method = "euclidean")
+clust_asp <- hclust(dist_1, method = "ward.D2", members = NULL)
+dend_sam_1 <- as.dendrogram(clust_asp)
+asp_ordered <- reorder(dend_sam_1, 1:ncol(asp_expr_sort))
+
+
+#Norway Spurce
+dist_2 <- dist(t(nor_expr_sort), method = "euclidean")
+clust_nor <- hclust(dist_2, method = "ward.D2", members = NULL)
+dend_sam_2 <- as.dendrogram(clust_nor)
+nor_ordered <- reorder(dend_sam_2, 1:ncol(nor_expr_sort))
+
+
+
+#Heatmap
+
+heat <- heatmap.2(as.matrix(corr_matrix), 
+                  trace = "none",col =
+                  colorRampPalette(c("blue","white","red")),
+                  cexCol = 0.8,
+                  # Colv = nor_ordered,
+                  # Rowv = asp_ordered,
+                  main = "Correlation Aspen - Norway Spruce") 
+
+
+
+
+
+
+```
+
+
+# Complete data set - 2 species
+
+
+
+```{r complete set p val}
+# 
+# asp_nor_p.val <- comparison_table%>%
+#   ungroup() %>% 
+#   select(Species1, Species2,OrthoGroup, Max.p.val) %>%
+#   mutate_at("Max.p.val", as.numeric) %>% 
+#   distinct(Species1, .keep_all = T) %>% 
+#   distinct( Species2, .keep_all = T) %>% 
+#   group_by(OrthoGroup) %>% 
+#   arrange(Max.p.val,.by_group = T) %>% 
+#   slice(1)
+# 
+# # Check the number of unique groups in test set.
+# length(unique(asp_nor_p.val$OrthoGroup))  
+# sum(duplicated(asp_nor_p.val$Species1))
+# sum(duplicated(asp_nor_p.val$Species2))
+# 
+# 
+
+
+# # Create a vector with the unique Orthogroups
+# og_2s <- unique(loop_2s$OrthoGroup)
+# species <- c(1,2)
+# 
+# beep(2)
+# 
+# # For each unique group, select lowest p-value, add to new df.
+# for(x in og_2s){
+#   for(i in species){
+#   lowest_p_val_2s <- loop_2s %>% 
+#   slice(which.min(Max.p.val))
+# }
+# }
+# # Check that the number of groups is the same as in test data set.
+# length(unique(lowest_p_val_2s$OrthoGroup))
+# beep(3)
+
+```
+
+
+
+```{r complete set filtering}
+# ----------------- ASP ------------------
+# Filter the genes in the expression tables to only include the genes in the 'lowest_p_value_s' df.
+# asp_expr_filt_comp <- asp_expr_data %>% 
+#   filter(Genes %in% asp_nor_p.val$Species1)
+# 
+# sum(duplicated(asp_expr_filt_comp$Genes))
+# 
+# # New data frame without first row (genes)
+# asp_expr_sort_comp <- asp_expr_filt_comp[,-1]
+# # Add genes as row names 
+# rownames(asp_expr_sort_comp) <- asp_expr_filt_comp$Genes
+# 
+# # Order the rows
+# asp_expr_sort_comp <-asp_expr_sort_comp[order(match (rownames(asp_expr_sort_comp), asp_nor_p.val$Species1)), , drop = F]
+# 
+# sum(duplicated(asp_expr_sort_comp$Genes))
+# 
+# # ----------------- Nor ------------------ 
+# 
+# 
+# nor_expr_filt_comp <- nor_expr_data %>% 
+#   filter(Genes %in% asp_nor_p.val$Species2)
+# 
+# sum(duplicated(nor_expr_filt_comp$Genes))
+# 
+# # New data frame without first row (genes)
+# nor_expr_sort_comp <- nor_expr_filt_comp[,-1]
+# # Add genes as row names 
+# rownames(nor_expr_sort_comp) <- nor_expr_filt_comp$Genes
+# 
+# # Order the rows
+# nor_expr_sort_comp <-nor_expr_sort_comp[order(match (rownames(nor_expr_sort_comp), asp_nor_p.val$Species2)), , drop = F]
+# 
+# sum(duplicated(nor_expr_filt_comp$Genes))
+
+```
+
+
+
+```{r complete set correlation and heatmap}
+
+# 
+# corr_matrix <- round(cor(asp_expr_sort_comp, nor_expr_sort_comp, method = "pearson"), 2)
+# 
+# # Need to order the samples. We know that the clusters more or less fall into a sequential order.
+# 
+# #Aspen
+# dist_1 <- dist(t(asp_expr_sort_comp), method = "euclidean")
+# clust_asp <- hclust(dist_1, method = "ward.D2", members = NULL)
+# dend_sam_1 <- as.dendrogram(clust_asp)
+# asp_ordered <- reorder(dend_sam_1, 1:ncol(asp_expr_sort_comp))
+# 
+# 
+# #Norway Spurce
+# dist_2 <- dist(t(nor_expr_sort_comp), method = "euclidean")
+# clust_nor <- hclust(dist_2, method = "ward.D2", members = NULL)
+# dend_sam_2 <- as.dendrogram(clust_nor)
+# nor_ordered <- reorder(dend_sam_2, 1:ncol(nor_expr_sort_comp))
+# 
+# 
+# 
+# #Heatmap
+# 
+# heat <- heatmap.2(corr_matrix, 
+#                   trace = "none",
+#                   col = colorRampPalette(c("blue","white","red")),
+#                   # Rowv = nor_ordered,
+#                   # Colv = asp_ordered,
+#                   main = "Aspen - Norway Spruce",
+#                   dendrogram = "none"
+#                   )
+# 
+
+
+```
+
+
+```{r alternative heatmap}
+# melted_corr <- melt(corr_matrix)
+# 
+# ggplot(melted_corr, aes(Var1, Var2, fill = value)) + geom_tile()
+
+
+```
+
+
+
+
+
+
+
+
+
+

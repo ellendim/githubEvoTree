@@ -1,0 +1,247 @@
+---
+title: "Comparative heatmap"
+author: "Ellen Dimmen Chapple"
+date: "2023-08-25"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: paper
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r Packages, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ComplexHeatmap)
+library(tibble)
+library(reshape2)
+library(cowplot)
+
+```
+
+
+**Flow**
+
+
+- Load expression datasets for: Aspen (AspWood) Norway Spruce (NorWood) and Scots Pine (ScotsWood)
+
+- Load comparison table which contains the various genes within each ortholog group for both species. The p-value for each    ortholog pair is calculated (both directions), and then the highest of these two is used for 'Max.p.val'.
+
+- Extract the lowest 'Max.p.val.' from each ortholog group with the corresponding ortholog pair.
+
+- Filter the expression data to only include genes that are from the lowest p-value ortholog pairs. The rows in the           expression data sets must also be ordered the same so that the gene in row 10 in species 1 will have its ortholog pair in   row 10 in species 2.
+  
+- Create a correlation matrix using the filtered and sorted/ordered expression data.
+
+- Create heatmap.
+
+
+
+# Loading the transcription data
+
+
+
+```{r}
+# AspWood
+asp_expr_data <- read.delim ("Data/DATA/AspWood_transcriptomics.txt")
+
+
+# NorWood
+nor_expr_data <- read.delim("Data/DATA/NorWood_transcriptomics.txt")
+
+# ScotsWood (Pinus Sylvestris, Scots Pine, Furu)
+scots_expr_data <- read.delim("Data/DATA/ScotsWood_transcriptomics.txt")
+
+cat("AspWood - # of genes: ", dim(asp_expr_data)[1],"\nNorWood - # of genes: ", dim(nor_expr_data)[1], "\nScotsWood - # of genes: ", dim(scots_expr_data)[1])
+```
+
+
+
+# Selecting ortholog pairs with lowest max p-value
+
+- 'Max.p.val' needs to be numeric.
+
+- Use distinct() to avoid the same gene appearing in the different OGs - this will otherwise cause the filtered expression data sets to have different row lengths which is needed for making correlation matrix. However, must be used after picking out the lowest p-values!
+
+NOTES FOR CODE BELOW: Need more compact code that can be used for all species combinations.
+
+
+```{r ASPNOR}
+
+
+
+load("~/NMBU/M60-BIAS/EvoTree/Data/DATA/comparison-Asp-Nor-pearsonMR0.03no-table.RData")
+asp_nor_p.val <- comparison_table%>%
+  # ungroup() %>% 
+  select(Species1, Species2,OrthoGroup, Max.p.val) %>%
+  mutate_at("Max.p.val", as.numeric) %>% 
+  group_by(OrthoGroup) %>% 
+  arrange(Max.p.val,.by_group = T) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  distinct(Species1, .keep_all = T) %>% 
+  distinct( Species2, .keep_all = T)
+
+
+# Check the number of unique groups in test set.
+cat("Number of orthogroups after removing genes appearing in multiple groups: ", length(unique(asp_nor_p.val$OrthoGroup)) )
+
+cat("Number of duplicated genes in Asp: ", sum(duplicated(asp_nor_p.val$Species1)), "\nNumber of duplicated genes in Nor: ",sum(duplicated(asp_nor_p.val$Species2)))
+
+# New filtering and sorting
+
+asp_expr_filt_comp <- asp_nor_p.val %>% 
+  left_join(asp_expr_data, join_by(Species1 == Genes)) %>% 
+  select(-c(2:4)) %>% 
+  as_tibble() %>% 
+  column_to_rownames(var = "Species1") %>% 
+  select(contains("1."))
+  
+# Original filtering and sorting
+
+asp_expr_filt_comp <- asp_expr_data %>% 
+  filter(Genes %in% asp_nor_p.val$Species1)
+
+rownames(asp_expr_filt_comp) <- asp_expr_filt_comp$Genes
+  
+asp_expr_sort_comp <- asp_expr_filt_comp[,-1] %>% 
+  select(contains("1."))  
+
+asp_expr_sort_comp <- asp_expr_sort_comp[order(match (rownames(asp_expr_filt_comp), asp_nor_p.val$Species1)), , drop = F]
+
+  
+  
+  
+# NorWood filtering and sorting
+
+nor_expr_filt_comp <- nor_expr_data %>% 
+  filter(Genes %in% asp_nor_p.val$Species2)
+
+rownames(nor_expr_filt_comp) <- nor_expr_filt_comp$Genes
+  
+nor_expr_sort_comp <- nor_expr_filt_comp[,-1] %>% 
+  select(contains("1."))  
+  nor_expr_sort_comp <- nor_expr_sort_comp[order(match (rownames(nor_expr_filt_comp), asp_nor_p.val$Species2)), , drop = F]
+
+
+# Correlation matrix and heatmap
+
+corr_asp_nor <- round(cor( asp_expr_sort_comp,nor_expr_sort_comp, method = "pearson"), 4)
+heat_asp_nor <-  Heatmap(corr_asp_nor, column_title = "Asp-Nor",
+    column_title_gp = gpar(fontsize = 15),
+    row_names_gp = gpar(fontsize = 8),
+    column_names_gp = gpar(fontsize = 8),
+    width = ncol(corr_asp_nor)*unit(5, "mm"), 
+    height = nrow(corr_asp_nor)*unit(5, "mm"),
+    row_order = 1:ncol(asp_expr_sort_comp),
+    column_order = 1:ncol(nor_expr_sort_comp),
+    name = "corr" ) 
+
+# melted <- melt(corr_asp_nor)
+# gg_heat <- ggplot(melted, aes(x = Var1, y = Var2, fill = value)) + geom_tile() + scale_fill_gradient2(low = "blue", mid = "white" ,high = "red")
+# gg_heat
+
+```
+
+
+
+```{r ASPSCOTS}
+
+#------------------ASP-SCOTS------------------
+load("~/NMBU/M60-BIAS/EvoTree/Data/DATA/comparison-Asp-Scots-pearsonMR0.03no-table.RData")
+
+
+asp_scots_p.val <- comparison_table%>%
+  # ungroup() %>% 
+  select(Species1, Species2,OrthoGroup, Max.p.val) %>%
+  mutate_at("Max.p.val", as.numeric) %>% 
+  group_by(OrthoGroup) %>% 
+  arrange(Max.p.val,.by_group = T) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  distinct(Species1, .keep_all = T) %>% 
+  distinct( Species2, .keep_all = T)
+# Check the number of unique groups in test set.
+
+cat("Number of orthogroups after removing genes appearing in multiple groups: ", length(unique(asp_scots_p.val$OrthoGroup)) )
+
+cat("Number of duplicated genes in Asp: ", sum(duplicated(asp_scots_p.val$Species1)), "\nNumber of duplicated genes in Scots: ",sum(duplicated(asp_scots_p.val$Species2)))
+
+# AspWood filtering and sorting
+asp_expr_filt_comp <- asp_expr_data %>% 
+  filter(Genes %in% asp_scots_p.val$Species1)
+
+rownames(asp_expr_filt_comp) <- asp_expr_filt_comp$Genes
+  
+asp_expr_sort_comp <- asp_expr_filt_comp[,-1] %>% 
+  select(contains("1."))  
+asp_expr_sort_comp <- asp_expr_sort_comp[order(match (rownames(asp_expr_filt_comp), asp_scots_p.val$Species1)), , drop = F]
+
+  
+  
+  
+# ScotsWood filtering and sorting
+
+scots_expr_filt_comp <- scots_expr_data %>% 
+  filter(Genes %in% asp_scots_p.val$Species2)
+
+rownames(scots_expr_filt_comp) <- scots_expr_filt_comp$Genes
+  
+scots_expr_sort_comp <- scots_expr_filt_comp[,-1] %>% 
+  select(contains("1."))  
+  scots_expr_sort_comp <- scots_expr_sort_comp[order(match (rownames(scots_expr_filt_comp), asp_scots_p.val$Species2)), , drop = F]
+
+# Correlation amd heatmap
+corr_asp_scots <- round(cor(asp_expr_sort_comp, scots_expr_sort_comp,method = "pearson"), 4)
+
+
+heat_asp_scots <-  Heatmap(corr_asp_scots, column_title = "Asp-Scots",
+    column_title_gp = gpar(fontsize = 15),
+    row_names_gp = gpar(fontsize = 8),
+    column_names_gp = gpar(fontsize = 8),
+    width = ncol(corr_asp_scots)*unit(5, "mm"), 
+    height = nrow(corr_asp_scots)*unit(5, "mm"),
+    row_order = 1:ncol(asp_expr_sort_comp),
+    column_order = 1:ncol(scots_expr_sort_comp),
+    name = "corr") 
+
+```
+
+
+```{r}
+
+# https://jokergoo.github.io/ComplexHeatmap-reference/book/
+
+```
+
+
+```{r}
+heats <-  heat_asp_nor + heat_asp_scots
+
+heats
+
+```
+
+
+
+```{r}
+# library(gplots)
+# 
+# gplots_hp <- heatmap.2(corr_asp_nor,
+#                  Rowv = F,
+#                  Colv = F,
+#                  dendrogram = "none",
+#                  tracecol = NULL,
+#                  col = colorRampPalette(c("blue", "white","red")),
+#                  lhei =   )
+
+
+```
+
+
