@@ -21,7 +21,7 @@ library(ggplot2)
 library(ComplexHeatmap)
 library(tibble)
 library(cowplot)
-library(gdata)
+library(gdata) 
 
 ```
 
@@ -207,7 +207,7 @@ for (x in file_list_1){ # Go through elements in list containing COMPARISON TABL
 g1 <- grid.grabExpr(print(hm_asp_nor))
 g2 <- grid.grabExpr(print(heat_asp_scots))
 plot_grid(g1, g2)
-
+ 
 
 ```
 
