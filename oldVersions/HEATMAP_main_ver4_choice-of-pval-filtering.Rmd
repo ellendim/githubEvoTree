@@ -1,0 +1,219 @@
+---
+title: "Comparative heatmap"
+author: "Ellen Dimmen Chapple"
+date: "2023-08-25"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: paper
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r Packages, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ComplexHeatmap)
+library(tibble)
+library(cowplot)
+library(gdata)
+
+```
+
+
+
+```{r name list}
+
+species1_list <- c("Asp", "Nor", "Scots")
+species2_list <- c("Asp", "Nor", "Scots")
+
+combo <- expand.grid(species1_list, species2_list) 
+combo$Var1 <- as.character(combo$Var1)
+combo$Var2 <- as.character(combo$Var2)
+
+```
+
+
+
+```{r file names}
+
+# List of file names.
+
+file_list_1 <- c()
+for (i in 1:nrow(combo)){
+  
+  s1 <- combo[i, "Var1"]
+  s2 <- combo[i, "Var2"]
+  
+  file_name <- paste0("Data/DATA/comparison-",s1,"_",s2,"-pearsonMR0.03no-table.RData")
+  file_list_1 <- append(file_list_1, file_name, after = length(file_list_1))
+    
+}
+
+
+file_list_2 <- c()
+for (i in species1_list){
+  
+  expr_name <- paste0("Data/DATA/",i,"Wood_transcriptomics.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+    
+}
+
+
+```
+
+```{r tests not for use, eval=FALSE, include=FALSE}
+
+for (file in file_list) {
+  
+  if (file.exists(file)) {
+  
+  print(TRUE)
+  
+ 
+  }
+  else {
+    print(FALSE)
+  }  
+}
+
+x <- c("London, UK", "Paris, France", "New York, USA")
+key <- sapply(strsplit(x, ","), "[",1)
+
+for (file in file_list){
+  
+  key <- sapply(strsplit(file, "_"), "[",2)
+  key <- sapply(strsplit(key, "-"), "[",1)
+  name <- paste0("species ", key)
+
+}
+
+a <- "Asp"
+b <- "Nor"
+
+test <- c(1:5)
+an <- as.character(paste0("hm-",a, "-",b))
+
+
+mv("test", an)
+
+new_test <- test
+tracemem(new_test)
+
+# Create Vector using c()
+id <- c(10,11,12,13)
+
+# Copy to a new variable
+new_id <- id
+tracemem(new_test)
+
+# Remove old variable
+rm(id)
+tracemem(new_id)
+
+
+
+
+```
+
+
+
+```{r loop}
+
+for (x in file_list_1){ # Go through elements in list containing COMPARISON TABLES.
+  if (file.exists(x)){ # If there exists such a list... do all below! Ex. 'Asp-Nor'.
+    # This is for BOTH species.
+    load(x) # Load file and create a comparison table for the two species.
+    p_val <- comparison_table%>%
+  # ungroup() %>%
+    select(Species1, Species2,OrthoGroup, Max.p.val) %>%
+    mutate_at("Max.p.val", as.numeric) %>%
+    group_by(OrthoGroup) %>%
+    #arrange(Max.p.val,.by_group = T) %>%
+    filter(Max.p.val < 0.05) %>% 
+    #slice(1) %>%
+    ungroup() %>%
+    distinct(Species1, .keep_all = T) %>%
+    distinct( Species2, .keep_all = T)
+
+    p_val_copy <- p_val # Copy the comparison table so it can be used for species 2.
+
+    # This is for SPECIES 1
+    key_word_s1 <- sapply(strsplit(x, "_"), "[",1) # Split the comparison file name...
+    key_word_s1 <- sapply(strsplit(key_word_s1, "-"), "[",2) # ... keeping the first species name.
+
+
+    for (i in file_list_2){ # Go through the EXPRESSION DATA.
+      if (grepl(key_word_s1, i)){ # If the string above contains key_word_1 ...
+      expr_data <- read.delim(i) # ... read the table.
+
+      s1_fs <- p_val %>% # Modify the p_val that was created above.
+      left_join(expr_data, join_by(Species1 == Genes)) %>%
+      select(-c("Species2", "Max.p.val", "OrthoGroup")) %>%
+      as_tibble() %>%
+      column_to_rownames(var = "Species1") %>%
+      select(contains("1."))
+      }}
+    
+    # This is for SPECIES 2
+    key_word_s2 <- sapply(strsplit(x, "_"), "[",2)
+    key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1) # Creating key words by keeping the second species name.
+
+    for (i in file_list_2){ # Go through the EXPRESSION DATA...again.
+      if (grepl(key_word_s2, i)){ # If the string above contains key_word_2 ...
+      expr_data <- read.delim(i) # ... read the table.
+
+      s2_fs <- p_val %>% # Modify the p_val that was created above.
+      left_join(expr_data, join_by(Species2 == Genes)) %>%
+      select(-c("Species1", "Max.p.val", "OrthoGroup")) %>%
+      as_tibble() %>%
+      column_to_rownames(var = "Species2") %>%
+      select(contains("1."))
+  }}
+
+    corr_matrix <- round(cor(s1_fs,s2_fs, method = "pearson"), 4) # Correlation matrix using the filtered + sorted                                                                      expression data for species 1 and 2.
+
+    hm <-  Heatmap(corr_matrix, column_title = paste0(key_word_s1,"-",key_word_s2),      # Want to create a heatmap object called hm_s1-s2, but with the names from key_word_1 and _2.
+    column_title_gp = gpar(fontsize = 15),
+    row_names_gp = gpar(fontsize = 8),
+    column_names_gp = gpar(fontsize = 8),
+    width = ncol(corr_matrix)*unit(5, "mm"),
+    height = nrow(corr_matrix)*unit(5, "mm"),
+    row_order = 1:ncol(s1_fs),
+    column_order = 1:ncol(s2_fs),
+    name = "corr" )
+    
+    print(hm)
+    
+    new_name <- as.character(paste0("hm-",key_word_s1, "-",key_word_s2))
+    mv("hm", new_name) # rename the heatmaps for plotting in grid.
+    
+  } 
+}
+
+
+```
+
+
+
+```{r plot_grid}
+
+
+g1 <- grid.grabExpr(print(heat_asp_nor))
+g2 <- grid.grabExpr(print(heat_asp_scots))
+plot_grid(g1, g2)
+
+
+```
+
+
+
+
+
+
+

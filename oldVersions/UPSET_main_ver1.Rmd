@@ -1,0 +1,245 @@
+---
+title: "Upset plot"
+author: "Ellen Dimmen Chapple"
+date: "2023-08-25"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: paper
+editor_options:
+  chunk_output_type: console
+---
+
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(gdata)
+library(UpSetR)
+
+
+```
+
+```{r}
+setwd("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Upset_plot")
+
+```
+
+Aim: create plot that shows the number of orthogroups that contains at least 1 gene from 1) all species, 2) all angiosperms, and 3) all gymnosperms.
+
+
+# Loading files
+
+
+```{r orthogroups and transcription data}
+ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t")
+species_list <- c("Asp", "Birch", "Cher", "Nor", "Scots", "Lodge")
+angio_list <- c("Asp", "Birch", "Cher")
+gymno_list <- c("Nor", "Scots", "Lodge")
+
+```
+
+# Extracting ortho groups present in all species
+
+Each ortho group (OG) occurs only once, so the number of rows is the number of OGs which all species have in common!
+In order to figure out the other species, simply select the species, and filter out the empty cells as done above.
+
+
+```{r everbody}
+
+
+ortho_general_filtering <- ortholog_group_file %>%
+    mutate(Pinsyl.SHORT.cp.pep = Pinsyl.SHORT.pep) %>% 
+    rename(
+      Asp = Poptre.SHORT.pep,
+      Birch = Betpen.SHORT.pep,
+      Nor = Picabi.SHORT.pep,
+      Scots = Pinsyl.SHORT.pep,
+      Cher = Prunavi.SHORT.pep,
+      Lodge = Pinsyl.SHORT.cp.pep,
+      OrthoGroup = Orthogroup
+    ) %>%
+    mutate(Asp = gsub("Poptre_", "", Asp)) %>%
+    mutate(Birch = gsub("Betpen_", "", Birch)) %>%
+    mutate(Cher = gsub("Prunavi_", "", Cher)) %>% 
+    select(OrthoGroup, species_list)
+
+
+
+# 1) Identify all rows that contain at least 1 blank cell and add to a vector.
+
+ortho_all <- ortho_general_filtering
+rows_to_be_removed <- c()
+
+
+for (i in 1:nrow(ortho_all)){  
+  
+  empty_row <- (ortho_all[i,] == "")
+  sum <- sum(empty_row == T)
+
+  if(sum >= 1) {
+    rows_to_be_removed <- append(rows_to_be_removed, i, after = length(i))
+
+     
+  } else {  
+    print(i)
+    print (sum)
+    } 
+}
+  
+  
+
+
+# 2) Remove the rows 
+ortho_all <- ortho_all[-c(rows_to_be_removed),]
+
+
+```
+
+
+# Extracting ortho groups present only in angiosperms
+
+```{r angios and gymnos }
+
+# 1)  data frames 
+
+ortho_angio <- ortho_general_filtering %>% 
+  select("OrthoGroup",c(angio_list))
+
+ortho_gymnos <- ortho_general_filtering %>% 
+  select("OrthoGroup", c(gymno_list))
+
+# 2) Create vectors with the row indices for locating empty cells
+
+# GYMNOS
+
+
+rows_to_be_removed <- c()
+for (i in 1:nrow(ortho_gymnos)){  
+  
+  empty_row <- (ortho_gymnos[i,] == "")
+  sum <- sum(empty_row == T)
+
+  if(sum >= 1) {
+    rows_to_be_removed <- append(rows_to_be_removed, i, after = length(i))
+
+     
+  } else {  
+    print(i)
+    print (sum)
+    } 
+}
+
+removable_gymnos <- rows_to_be_removed
+
+
+# ANGIOS
+rows_to_be_removed <- c()
+for (i in 1:nrow(ortho_angio)){  
+  
+  empty_row <- (ortho_angio[i,] == "")
+  sum <- sum(empty_row == T)
+
+  if(sum >= 1) {
+    rows_to_be_removed <- append(rows_to_be_removed, i, after = length(i))
+
+     
+  } else {  
+    print(i)
+    print (sum)
+
+    } 
+}
+
+removable_angios <- rows_to_be_removed
+
+# 3) Filter the vectors so that each vector only contains a unique set of row indices. An overlap means that both groups contain at least one empty cell.
+
+
+only_empty_in_gymnos <- removable_gymnos[!removable_angios %in% removable_gymnos]
+only_empty_in_angios <- removable_angios[!removable_gymnos %in% removable_angios]
+
+ortho_gymnos <- ortho_gymnos[c(only_empty_in_gymnos),]
+ortho_angio <- ortho_angio[c(only_empty_in_angios),]
+
+
+
+```
+
+
+
+```{r}
+
+paste0("Number of ortho groups shared by all sepcies: ", nrow(ortho_all))
+paste0("Number of ortho groups unique to angiosperms: ", nrow(ortho_angio))
+paste0("Number of ortho groups unique to gymnosperms: ", nrow(ortho_gymnos))
+
+```
+
+
+# Create the upset-plot
+
+```{r}
+
+input <- c(
+  "Asp&Birch&Cher&Nor&Lodge&Scots" = nrow(ortho_all),
+  "Asp&Birch&Cher" = nrow(ortho_angio),
+  "Nor&Scots&Lodge" = nrow(ortho_gymnos)
+
+)
+
+upset_plot <- upset(fromExpression(input), 
+      nintersects = 3, 
+      nsets = 6, 
+      order.by = "freq", 
+      decreasing = T, 
+      mb.ratio = c(0.6, 0.4),
+      number.angles = 0, 
+      text.scale = 1.1, 
+      point.size = 2.0, 
+      line.size = 0.6
+      )
+
+upset_plot
+
+```
+
+
+
+
+
+- double check for neg correlations
+- coexpressologs, pairwise
+
+For 01.11.23:
+
+- upset plot
+- higher p-values were used
+- har laget en legend reference for hm (mini-hm og et violinplot)
+
+
+- mulig å få tilsendt en tidligere masteroppgave?
+
+
+-> redo upset plot! See example in R. Redo data frame to 1's and 0's. but keep this one
+make pairwise comparison, and then some criterea specific for each group (do this later)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

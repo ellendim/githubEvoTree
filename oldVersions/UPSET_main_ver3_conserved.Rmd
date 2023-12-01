@@ -1,0 +1,573 @@
+---
+title: "Upset plot"
+author: "Ellen Dimmen Chapple"
+date: "2023-08-25"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: paper
+editor_options:
+  chunk_output_type: console
+---
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(dplyr)
+library(tidyr)
+library(gdata)
+library(UpSetR)
+library(ggplot2)
+library(viridis)
+library(gridExtra)
+```
+
+```{r}
+setwd("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Upset_plot")
+
+```
+
+
+# Combining pair-wise comparison-tables
+
+
+```{r}
+# Read ortholog file
+ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t")
+
+# Create file list to use in loop
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+combo <- data.frame(t(combn(species_list, 2)))
+
+file_list_1 <- c()
+for (i in 1:nrow(combo)){
+  
+  s1 <- combo[i, "X1"]
+  s2 <- combo[i, "X2"]
+  
+  file_name <- paste0("Data/DATA/comparison-",s1,"_",s2,"-pearsonMR0.03no-table.RData")
+  file_list_1 <- append(file_list_1, file_name, after = length(file_list_1))
+    
+}
+
+```
+
+
+```{r message=FALSE, warning=FALSE}
+
+ortho_general_filtering <- ortholog_group_file %>%
+    mutate(Pinsyl.SHORT.cp.pep = Pinsyl.SHORT.pep) %>% 
+    rename(
+      Asp = Poptre.SHORT.pep,
+      Birch = Betpen.SHORT.pep,
+      Nor = Picabi.SHORT.pep,
+      Scots = Pinsyl.SHORT.pep,
+      Cher = Prunavi.SHORT.pep,
+      Lodge = Pinsyl.SHORT.cp.pep,
+      OrthoGroup = Orthogroup) %>% 
+    select(OrthoGroup, species_list)
+
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+ones_and_zeros <- ortho_general_filtering 
+
+table_sizes <- data.frame(
+  pair = c(),
+  size = c()
+)
+
+dist_pval <- data.frame(
+  pair = c(),
+  index =c(),
+  max_pval = c()
+)
+comparison_pval <- data.frame(
+  index = c(),
+  corr_pair = c(),
+  max_pval = c()
+)
+
+
+for (x in file_list_1){
+  if (file.exists(x)){ 
+    load(x) 
+    
+    # Filter the comparison tables to just contain one gene pair for each ortholog group. 
+    
+    p_val <- comparison_table%>%
+    select(Species1, Species2, OrthoGroup, Max.p.val) %>%
+    mutate_at("Max.p.val", as.numeric) %>%
+    filter(Max.p.val< 0.05) %>%  # only p-values under ...
+    group_by(OrthoGroup) %>%
+    arrange(Max.p.val) %>% 
+    slice(1) 
+    # ungroup() %>%
+    # distinct(Species1,  .keep_all = T) %>%
+    # distinct( Species2, .keep_all = T) %>%
+    # arrange(Max.p.val)
+    
+
+    key_word_s1 <- sapply(strsplit(x, "_"), "[",1) 
+    key_word_s1 <- sapply(strsplit(key_word_s1, "-"), "[",2) 
+    key_word_s2 <- sapply(strsplit(x, "_"), "[",2)
+    key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1)
+    
+    print(paste0("---------------- ", key_word_s1, "-", key_word_s2, " ----------------" ))
+    print(paste0("Number of non-unique ortholog groups: ", nrow(p_val)-length(unique(p_val$OrthoGroup)))) 
+    print(paste0("S1 duplicates: ", nrow(p_val)-length(unique(p_val$Species1)), " S2 duplicates: ",nrow(p_val)-length(unique(p_val$Species2)) ))
+    
+    new_col_name <-as.character(paste0(key_word_s1, "-", key_word_s2))
+    
+  table_sizes <- rbind(table_sizes, data.frame(
+  pair = new_col_name,
+  size = nrow(p_val)
+))
+  dist_pval <- rbind(dist_pval, data.frame(
+  pair = paste0(key_word_s1, "-", key_word_s2),
+  index = 1:nrow(p_val),
+  max_pval = p_val$Max.p.val)
+)
+    comparison_pval <- rbind(comparison_pval, data.frame(
+  index = 1:nrow(comparison_table),
+  corr_pair = paste0(key_word_s1, "-", key_word_s2),
+  max_pval = comparison_table$Max.p.val
+    
+))
+
+    # Rename one of the columns
+    colnames(p_val)[1] = new_col_name
+
+    p_val <- p_val %>%
+      select(-c(Species2, Max.p.val))
+
+    # Make a new column the same length as all the original ortholog data containing 'all possible' ortholog groups
+    new_column <- ones_and_zeros %>%
+      left_join(p_val, join_by(OrthoGroup == OrthoGroup)) %>%
+      select(new_col_name)
+
+    print(paste0("Length after joining: ",nrow(new_column)))
+
+    ones_and_zeros <- cbind(ones_and_zeros, new_column)
+    
+
+    
+    }}
+
+    
+rownames(ones_and_zeros) <- ones_and_zeros$OrthoGroup
+ones_and_zeros <- ones_and_zeros[,-c(1:7)]
+
+# Create 0 where there are NAs, and 1's where there are no "0"'s
+ones_and_zeros[is.na(ones_and_zeros)] <- 0
+ones_and_zeros[ones_and_zeros != 0] <-1
+
+ones_and_zeros <- ones_and_zeros %>%
+   mutate_if(is.character, as.integer)
+
+# Specify the order we want the output
+col_order <- c(  "Asp-Birch",  "Asp-Cher", "Birch-Cher",  "Lodge-Asp", "Lodge-Birch", "Lodge-Cher",  "Asp-Nor","Nor-Birch", "Nor-Cher", "Scots-Birch", "Scots-Cher",  "Asp-Scots" ,  "Lodge-Scots", "Lodge-Nor", "Nor-Scots")
+
+ones_and_zeros <- ones_and_zeros[, col_order]
+  
+```
+
+```{r eval=FALSE, include=FALSE}
+
+table_sizes <- table_sizes %>% 
+  arrange(size)
+
+
+pval_plot <-ggplot(dist_pval,aes(x=index, y=max_pval, group = pair, color = pair)) + 
+    geom_line(linewidth = 1) +
+    scale_color_manual(values = c(rainbow(15))) +
+    ggtitle("Dist. of max p-values - p-val 0.05, one pair per group") +
+    ylab("Max p-value") +
+  xlim(-0.5, 20000) +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 14)
+  ) +
+  annotation_custom(tableGrob(table_sizes), xmin = 10000,  ymin=0.0)
+
+pval_plot
+
+
+```
+
+
+```{r }
+# Plot upset plot. Using sets = rev(col_order) gives set order from top to bottom. Remember keep.order = T - if not the set order will be sorted by set size.
+upset(ones_and_zeros, 
+      sets =  rev(col_order),
+ 
+      nintersects = 50,
+      keep.order = T, 
+      order.by = "freq",decreasing = T,
+      set_size.show = T,
+      text.scale = 1.5,
+      set_size.scale_max = 7000)
+
+```
+
+
+## Complete sets
+
+```{r}
+
+df_with_sums <- ones_and_zeros %>% 
+  mutate(Angiosperms = rowSums(. [1:3])) %>% 
+  mutate(Between = rowSums(. [4:12]))%>%  
+  mutate(Gymnosperms = rowSums(. [13:15])) %>% 
+  mutate(Conserved = rowSums(. [1:15]))
+
+palette_1 <- c("#440154", "#31688e","#fde725")
+width_1 <- 0.2
+
+# Angiosperms - converting to 1's and 0's based on the value in the sum column, AND if the sum in the two other columns is = 0.
+# 1) Need to filter out the rows where Conserved and Gymnosperms != 0. Do this in separate data frame as we need df_with_sum for later.
+
+angios_strict <- df_with_sums %>% 
+  filter(Between == 0) %>% 
+  filter(Gymnosperms == 0)
+
+# 2) Now we can add the 1's and 0's.
+angios_strict$Angiosperms[angios_strict$Angiosperms < 3] <- 0 # 1 and 2 are changed to 0.
+angios_strict$Angiosperms[angios_strict$Angiosperms == 3] <- 1 # 3 is changed to 1.
+
+paste0("Total number of rows: ",dim(angios_strict)[1], " Sum: ", sum(angios_strict$Angiosperms))
+
+# Now the same for gymnosperms.
+
+gymnos_strict<- df_with_sums %>% 
+  filter(Between == 0) %>% 
+  filter(Angiosperms == 0)
+
+gymnos_strict$Gymnosperms[gymnos_strict$Gymnosperms < 3] <- 0 # 1 and 2 are changed to 0.
+gymnos_strict$Gymnosperms[gymnos_strict$Gymnosperms == 3] <- 1 # 3 is changed to 1.
+
+paste0("Total number of rows: ",dim(gymnos_strict)[1], " Sum: ", sum(gymnos_strict$Gymnosperms))
+
+# Finally, for the conserved. Now we need to change the threshold!
+
+conserved_strict <- df_with_sums %>% 
+  filter(Angiosperms == 3) %>% 
+  filter(Gymnosperms == 3) 
+
+conserved_strict$Conserved[conserved_strict$Conserved < 15] <- 0 # 1->9 are changed to 0.
+conserved_strict$Conserved[conserved_strict$Conserved == 15] <- 1 # 9 is changed to 1.
+
+paste0("Total number of rows: ",dim(conserved_strict)[1], " Sum: ", sum(conserved_strict$Conserved))
+
+```
+
+
+
+```{r}
+# The summary data frame contains the number of genes/ortholog groups that are completely present in each species group. That means
+# that there needs to be a n/n score for each gene for it to be included, where n = number of species in the species group.
+
+summary_df <- data.frame(
+  species_group = c(),
+  counts = c()
+)
+
+
+summary_df <- rbind(summary_df, data.frame(
+  species_group = names(angios_strict)[16],
+  counts = sum(angios_strict$Angiosperms)
+))
+
+summary_df <- rbind(summary_df,data.frame(
+  species_group = names(gymnos_strict)[18],
+  counts = sum(gymnos_strict$Gymnosperms)
+))
+
+summary_df <- rbind(summary_df,data.frame(
+  species_group = names(conserved_strict)[19],
+  counts = sum(conserved_strict$Conserved)
+))
+
+# Plot the values
+
+complete_plot <- ggplot(summary_df, aes(x=species_group, y=counts, fill = species_group)) + 
+  geom_bar(stat = "identity", width = width_1) + coord_flip() + geom_text(aes(label = counts), hjust= -1) +scale_fill_manual(values = palette_1)  + labs(title = "Strict", y = "Conserved genes", x = "") +  theme(legend.position = "top")
+
+complete_plot
+
+```
+
+
+## Partial set 1
+
+```{r}
+# Use the strict data frames for the clades.
+
+# For the conserved groups we require complete clades, but allow only partial overlap of between-pairs.
+
+conserved_partial_1 <- df_with_sums %>% 
+  filter(Angiosperms >= 3) %>% 
+  filter(Gymnosperms >= 3) 
+
+conserved_partial_1$Conserved[conserved_partial_1$Conserved < 8] <- 0 # 1->9 are changed to 0.
+conserved_partial_1$Conserved[conserved_partial_1$Conserved >= 8] <- 1 # 9 is changed to 1.
+
+paste0("Total number of rows: ",dim(conserved_partial_1)[1], " Sum: ", sum(conserved_partial_1$Conserved))
+
+
+```
+
+
+
+```{r}
+
+summary_df <- data.frame(
+  species_group = c(),
+  counts = c()
+)
+
+
+summary_df <- rbind(summary_df, data.frame(
+  species_group = names(angios_strict)[16],
+  counts = sum(angios_strict$Angiosperms)
+))
+
+summary_df <- rbind(summary_df,data.frame(
+  species_group = names(gymnos_strict)[18],
+  counts = sum(gymnos_strict$Gymnosperms)
+))
+
+summary_df <- rbind(summary_df,data.frame(
+  species_group = names(conserved_partial_1)[19],
+  counts = sum(conserved_partial_1$Conserved)
+))
+
+# Plot the values
+
+partial_plot_1 <- ggplot(summary_df, aes(x=species_group, y=counts, fill = species_group)) + 
+  geom_bar(stat = "identity", width = width_1) + coord_flip() + geom_text(aes(label = counts), hjust= -0.5) + scale_fill_manual(values = palette_1) + labs(title = "Partial 1", y = "Conserved genes", x = "") +  theme(legend.position = "top")
+
+partial_plot_1
+
+
+```
+
+
+## Partial sets 2
+
+```{r}
+
+# Use the strict data frames for the clades.
+
+# Same as for partial 1, but with require 5/9 pair-genes.
+
+
+conserved_partial_2 <- df_with_sums %>% 
+  filter(Angiosperms >= 3) %>% 
+  filter(Gymnosperms >= 3) %>% 
+  filter(Between >= 5)
+
+conserved_partial_2$Conserved[conserved_partial_2$Conserved < 11] <- 0 # 1->9 are changed to 0.
+conserved_partial_2$Conserved[conserved_partial_2$Conserved >= 11] <- 1 # 9 is changed to 1.
+
+paste0("Total number of rows: ",dim(conserved_partial_2)[1], " Sum: ", sum(conserved_partial_2$Conserved))
+
+```
+
+
+
+```{r}
+
+summary_df <- data.frame(
+  species_group = c(),
+  counts = c()
+)
+
+
+summary_df <- rbind(summary_df, data.frame(
+  species_group = names(angios_strict)[16],
+  counts = sum(angios_strict$Angiosperms)
+))
+
+summary_df <- rbind(summary_df,data.frame(
+  species_group = names(gymnos_strict)[18],
+  counts = sum(gymnos_strict$Gymnosperms)
+))
+
+summary_df <- rbind(summary_df,data.frame(
+  species_group = names(conserved_partial_2)[19],
+  counts = sum(conserved_partial_2$Conserved)
+))
+
+# Plot the values
+
+partial_plot_2 <- ggplot(summary_df, aes(x=species_group, y=counts, fill = species_group)) + 
+  geom_bar(stat = "identity", width = width_1) + coord_flip() + geom_text(aes(label = counts), hjust= -0.5) + scale_fill_manual(values = palette_1) +  labs(title = "Partial 2", y = "Conserved genes", x = "") +  theme(legend.position = "top")
+
+
+partial_plot_2
+
+
+```
+
+
+## Partial sets - 3
+
+```{r}
+
+# Now we allow 2/3 pairs for clades, but still require pure clades.
+
+# Angiosperms
+angios_partial_1 <- df_with_sums %>% 
+  filter(Between == 0) %>% 
+  filter(Gymnosperms == 0) 
+
+# 2) Now we can add the 1's and 0's.
+angios_partial_1$Angiosperms[angios_partial_1$Angiosperms < 2] <- 0 # 1 and 2 are changed to 0.
+angios_partial_1$Angiosperms[angios_partial_1$Angiosperms >= 2] <- 1 # over 2 is changed to 1.
+
+paste0("Total number of rows: ",dim(angios_partial_1)[1], " Sum: ", sum(angios_partial_1$Angiosperms))  
+
+# Gymnosperms
+gymnos_partial_1 <- df_with_sums %>% 
+  filter(Angiosperms == 0) %>% 
+  filter(Between == 0)
+
+# 2) Now we can add the 1's and 0's.
+gymnos_partial_1$Gymnosperms[gymnos_partial_1$Gymnosperms < 2] <- 0 # Even though we allow max 3 pairs between, we still want full clades.
+gymnos_partial_1$Gymnosperms[gymnos_partial_1$Gymnosperms >= 2] <- 1 # over 2 is changed to 1.
+
+paste0("Total number of rows: ",dim(gymnos_partial_1)[1], " Sum: ", sum(gymnos_partial_1$Gymnosperms))  
+
+# For the conserved groups we allow 1) 2/3 for clades, and 2) 2/9 for between pairs.
+
+conserved_partial_3 <- df_with_sums %>% 
+  filter(Angiosperms >= 2) %>% 
+  filter(Gymnosperms >= 2) %>% 
+  filter(Between >=2)
+
+conserved_partial_3$Conserved[conserved_partial_3$Conserved < 6] <- 0 # 1->9 are changed to 0.
+conserved_partial_3$Conserved[conserved_partial_3$Conserved >= 6] <- 1 # 9 is changed to 1.
+
+paste0("Total number of rows: ",dim(conserved_partial_3)[1], " Sum: ", sum(conserved_partial_3$Conserved))
+
+```
+
+
+
+```{r}
+
+summary_df <- data.frame(
+  species_group = c(),
+  counts = c()
+)
+
+
+summary_df <- rbind(summary_df, data.frame(
+  species_group = names(angios_partial_1)[16],
+  counts = sum(angios_partial_1$Angiosperms)
+))
+
+summary_df <- rbind(summary_df,data.frame(
+  species_group = names(gymnos_partial_1)[18],
+  counts = sum(gymnos_partial_1$Gymnosperms)
+))
+
+summary_df <- rbind(summary_df,data.frame(
+  species_group = names(conserved_partial_3)[19],
+  counts = sum(conserved_partial_3$Conserved)
+))
+
+# Plot the values
+
+partial_plot_3 <- ggplot(summary_df, aes(x=species_group, y=counts, fill = species_group)) + 
+  geom_bar(stat = "identity", width = width_1) + coord_flip() + geom_text(aes(label = counts), hjust= -0.5) + scale_fill_manual(values = palette_1)  + labs(title = "Partial 3", y = "Conserved genes", x = "") +  theme(legend.position = "top")
+
+
+partial_plot_3
+
+
+```
+
+
+## Partial sets - 4
+
+```{r}
+
+# Now we allow 2/3 pairs for clades, but still require pure clades.
+
+
+# For the conserved groups we allow 1) 2/3 for clades, and 2) 5/9 for between pairs.
+
+conserved_partial_4 <- df_with_sums %>% 
+  filter(Angiosperms >= 2) %>% 
+  filter(Gymnosperms >= 2) %>% 
+  filter(Between >=5)
+
+conserved_partial_4$Conserved[conserved_partial_4$Conserved < 9] <- 0 # 1->9 are changed to 0.
+conserved_partial_4$Conserved[conserved_partial_4$Conserved >= 9] <- 1 # 9 is changed to 1.
+
+paste0("Total number of rows: ",dim(conserved_partial_4)[1], " Sum: ", sum(conserved_partial_4$Conserved))
+
+```
+
+
+
+```{r}
+
+summary_df <- data.frame(
+  species_group = c(),
+  counts = c()
+)
+
+
+summary_df <- rbind(summary_df, data.frame(
+  species_group = names(angios_partial_1)[16],
+  counts = sum(angios_partial_1$Angiosperms)
+))
+
+summary_df <- rbind(summary_df,data.frame(
+  species_group = names(gymnos_partial_1)[18],
+  counts = sum(gymnos_partial_1$Gymnosperms)
+))
+
+summary_df <- rbind(summary_df,data.frame(
+  species_group = names(conserved_partial_4)[19],
+  counts = sum(conserved_partial_4$Conserved)
+))
+
+# Plot the values
+
+partial_plot_4 <- ggplot(summary_df, aes(x=species_group, y=counts, fill = species_group)) + 
+  geom_bar(stat = "identity", width = width_1) + coord_flip() + geom_text(aes(label = counts), hjust= -0.5) + scale_fill_manual(values = palette_1)  + labs(title = "Partial 4", y = "Conserved genes", x = "") +  theme(legend.position = "top")
+
+
+partial_plot_4
+
+
+```
+
+
+
+```{r}
+# Need alternative - want the same axis
+
+cow_plot <- cowplot::plot_grid(complete_plot, 
+                               partial_plot_1, partial_plot_2,
+                               partial_plot_3, partial_plot_4, nrow = 3, ncol = 2)
+
+cow_plot
+```
+
+
+
+
+

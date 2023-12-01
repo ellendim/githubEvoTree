@@ -1,0 +1,249 @@
+---
+title: "Upset plot"
+author: "Ellen Dimmen Chapple"
+date: "2023-08-25"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: paper
+editor_options:
+  chunk_output_type: console
+---
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(dplyr)
+library(tidyr)
+library(gdata)
+library(UpSetR)
+library(ggplot2)
+library(viridis)
+library(gridExtra)
+```
+
+```{r}
+setwd("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Upset_plot")
+
+```
+
+
+# Combining pair-wise comparison-tables
+
+
+```{r}
+# Read ortholog file
+ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t")
+
+# Create file list to use in loop
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+combo <- data.frame(t(combn(species_list, 2)))
+
+file_list_1 <- c()
+for (i in 1:nrow(combo)){
+  
+  s1 <- combo[i, "X1"]
+  s2 <- combo[i, "X2"]
+  
+  file_name <- paste0("Data/DATA/comparison-",s1,"_",s2,"-pearsonMR0.03no-table.RData")
+  file_list_1 <- append(file_list_1, file_name, after = length(file_list_1))
+    
+}
+
+```
+
+
+```{r message=FALSE, warning=FALSE}
+
+ortho_general_filtering <- ortholog_group_file %>%
+    mutate(Pinsyl.SHORT.cp.pep = Pinsyl.SHORT.pep) %>% 
+    rename(
+      Asp = Poptre.SHORT.pep,
+      Birch = Betpen.SHORT.pep,
+      Nor = Picabi.SHORT.pep,
+      Scots = Pinsyl.SHORT.pep,
+      Cher = Prunavi.SHORT.pep,
+      Lodge = Pinsyl.SHORT.cp.pep,
+      OrthoGroup = Orthogroup) %>% 
+    select(OrthoGroup, species_list)
+
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+ones_and_zeros <- ortho_general_filtering 
+
+table_sizes <- data.frame(
+  pair = c(),
+  size = c()
+)
+
+dist_pval <- data.frame(
+  pair = c(),
+  index =c(),
+  max_pval = c()
+)
+comparison_pval <- data.frame(
+  index = c(),
+  corr_pair = c(),
+  max_pval = c()
+)
+
+
+for (x in file_list_1){
+  if (file.exists(x)){ 
+    load(x) 
+    
+    # Filter the comparison tables to just contain one gene pair for each ortholog group. 
+    
+    p_val <- comparison_table%>%
+    select(Species1, Species2, OrthoGroup, Max.p.val) %>%
+    mutate_at("Max.p.val", as.numeric) %>%
+    filter(Max.p.val< 0.05) %>%  # only p-values under ...
+    group_by(OrthoGroup) %>%
+    arrange(Max.p.val) %>% 
+    slice(1) 
+    # ungroup() %>%
+    # distinct(Species1,  .keep_all = T) %>%
+    # distinct( Species2, .keep_all = T) %>%
+    # arrange(Max.p.val)
+    
+
+    key_word_s1 <- sapply(strsplit(x, "_"), "[",1) 
+    key_word_s1 <- sapply(strsplit(key_word_s1, "-"), "[",2) 
+    key_word_s2 <- sapply(strsplit(x, "_"), "[",2)
+    key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1)
+    
+    print(paste0("---------------- ", key_word_s1, "-", key_word_s2, " ----------------" ))
+    print(paste0("Number of non-unique ortholog groups: ", nrow(p_val)-length(unique(p_val$OrthoGroup)))) 
+    print(paste0("S1 duplicates: ", nrow(p_val)-length(unique(p_val$Species1)), " S2 duplicates: ",nrow(p_val)-length(unique(p_val$Species2)) ))
+    
+    new_col_name <-as.character(paste0(key_word_s1, "-", key_word_s2))
+    
+  table_sizes <- rbind(table_sizes, data.frame(
+  pair = new_col_name,
+  size = nrow(p_val)
+))
+  dist_pval <- rbind(dist_pval, data.frame(
+  pair = paste0(key_word_s1, "-", key_word_s2),
+  index = 1:nrow(p_val),
+  max_pval = p_val$Max.p.val)
+)
+    comparison_pval <- rbind(comparison_pval, data.frame(
+  index = 1:nrow(comparison_table),
+  corr_pair = paste0(key_word_s1, "-", key_word_s2),
+  max_pval = comparison_table$Max.p.val
+    
+))
+
+    # Rename one of the columns
+    colnames(p_val)[1] = new_col_name
+
+    p_val <- p_val %>%
+      select(-c(Species2, Max.p.val))
+
+    # Make a new column the same length as all the original ortholog data containing 'all possible' ortholog groups
+    new_column <- ones_and_zeros %>%
+      left_join(p_val, join_by(OrthoGroup == OrthoGroup)) %>%
+      select(new_col_name)
+
+    print(paste0("Length after joining: ",nrow(new_column)))
+
+    ones_and_zeros <- cbind(ones_and_zeros, new_column)
+    
+
+    
+    }}
+
+    
+rownames(ones_and_zeros) <- ones_and_zeros$OrthoGroup
+ones_and_zeros <- ones_and_zeros[,-c(1:7)]
+
+# Create 0 where there are NAs, and 1's where there are no "0"'s
+ones_and_zeros[is.na(ones_and_zeros)] <- 0
+ones_and_zeros[ones_and_zeros != 0] <-1
+
+ones_and_zeros <- ones_and_zeros %>%
+   mutate_if(is.character, as.numeric)
+
+# Specify the order we want the output
+col_order <- c(  "Asp-Birch",  "Asp-Cher", "Birch-Cher",  "Lodge-Asp", "Lodge-Birch", "Lodge-Cher",  "Asp-Nor","Nor-Birch", "Nor-Cher", "Scots-Birch", "Scots-Cher",  "Asp-Scots" ,  "Lodge-Scots", "Lodge-Nor", "Nor-Scots")
+
+ones_and_zeros <- ones_and_zeros[, col_order]
+  
+```
+
+```{r eval=FALSE, include=FALSE}
+
+table_sizes <- table_sizes %>% 
+  arrange(size)
+
+
+pval_plot <-ggplot(dist_pval,aes(x=index, y=max_pval, group = pair, color = pair)) + 
+    geom_line(linewidth = 1) +
+    scale_color_manual(values = c(rainbow(15))) +
+    ggtitle("Dist. of max p-values - p-val 0.05, one pair per group") +
+    ylab("Max p-value") +
+  xlim(-0.5, 20000) +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 14)
+  ) +
+  annotation_custom(tableGrob(table_sizes), xmin = 10000,  ymin=0.0)
+
+pval_plot
+
+
+
+# comparison_pval <- comparison_pval %>% 
+#   mutate_at("max_pval", as.numeric)
+# 
+# 
+# pval_plot_2 <-ggplot(comparison_pval ,aes(x=index, y=max_pval, group=corr_pair, color=corr_pair)) +
+#     geom_line(linewidth = 1) +
+#     scale_color_manual(values = c(rainbow(15))) +
+#     ggtitle("Dist. of max p-values - unfiltered") +
+#     ylab("Max p-value") +
+#   xlim(-0.5, 20000) +
+#     theme(
+#     legend.text = element_text(size = 14),
+#     legend.title = element_text(size = 20)
+#   )
+# 
+# 
+# pval_plot_2
+
+```
+
+
+```{r }
+# Plot upset plot. Using sets = rev(col_order) gives set order from top to bottom. Remember keep.order = T - if not the set order will be sorted by set size.
+upset(ones_and_zeros, 
+      sets =  rev(col_order),
+      nsets = ncol(ones_and_zeros), 
+      nintersects = 30,
+      keep.order = T, 
+      order.by = "freq",decreasing = T,
+      set_size.show = T,
+      text.scale = 1.5,
+      set_size.scale_max = 7000)
+
+```
+
+
+
+
+
+
+
+
+
+
+

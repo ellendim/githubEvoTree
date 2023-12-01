@@ -1,0 +1,248 @@
+---
+title: "Comparative heatmap_"
+author: "Ellen Dimmen Chapple"
+date: "2023-08-25"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: paper
+editor_options:
+  chunk_output_type: console
+---
+
+# Libraries and lists
+
+```{r Packages, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ComplexHeatmap)
+library(tibble)
+library(cowplot)
+library(gplots)
+library(gdata)
+library(circlize)
+library(ape)
+library(ggtree)
+setwd("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Comparative-heatmap_files")
+
+```
+
+
+
+```{r name list}
+
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+#"Asp", "Nor", ,  "Cher"
+combo <- data.frame(t(combn(species_list, 2)))
+
+```
+
+
+
+```{r file names}
+
+# List of file names.
+
+file_list_1 <- c()
+for (i in 1:nrow(combo)){
+  
+  s1 <- combo[i, "X1"]
+  s2 <- combo[i, "X2"]
+  
+  file_name <- paste0("Data/DATA/comparison-",s1,"_",s2,"-pearsonMR0.03no-table.RData")
+  file_list_1 <- append(file_list_1, file_name, after = length(file_list_1))
+    
+}
+
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/",i,"Wood_transcriptomics.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+    
+}
+
+
+```
+
+# Heatmaps
+
+## Correlation matrices
+
+```{r corr matrix}
+for (x in file_list_1){
+  if (file.exists(x)){ # If there exists such a list... do all below! Ex. 'Asp-Nor'.
+    # This is for BOTH species.
+    load(x) # Load file and create a comparison table for the two species.
+    p_val <- comparison_table%>%
+  # ungroup() %>%
+    select(Species1, Species2,OrthoGroup, Max.p.val) %>%
+    mutate_at("Max.p.val", as.numeric) %>%
+    group_by(OrthoGroup) %>%
+    filter(Max.p.val<= 0.05) %>% # only p-values under 0.05
+#arrange(Max.p.val,.by_group = T) %>%
+# slice(1) %>%
+    ungroup() %>%
+    distinct(Species1, .keep_all = T) %>%
+    distinct( Species2, .keep_all = T)
+
+    p_val_copy <- p_val # Copy the comparison table so it can be used for species 2.
+
+    # This is for SPECIES 1
+    key_word_s1 <- sapply(strsplit(x, "_"), "[",1) # Split the comparison file name...
+    key_word_s1 <- sapply(strsplit(key_word_s1, "-"), "[",2) # ... keeping the first species name.
+
+
+    for (i in file_list_2){ # Go through the EXPRESSION DATA.
+      if (grepl(key_word_s1, i)){ # If the string above contains key_word_1 ...
+      expr_data <- read.delim(i) # ... read the table.
+
+      s1_fs <- p_val %>% # Modify the p_val that was created above.
+      left_join(expr_data, join_by(Species1 == Genes)) %>%
+      select(-c("Species2", "Max.p.val", "OrthoGroup")) %>%
+      as_tibble() %>%
+      column_to_rownames(var = "Species1") %>%
+      select(contains("1."))
+      }}
+    
+    
+    # This is for SPECIES 2
+    key_word_s2 <- sapply(strsplit(x, "_"), "[",2)
+    key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1) # Creating key words by keeping the second species name.
+
+    for (i in file_list_2){ # Go through the EXPRESSION DATA...again.
+      if (grepl(key_word_s2, i)){ # If the string above contains key_word_2 ...
+      expr_data <- read.delim(i) # ... read the table.
+
+      s2_fs <- p_val %>% # Modify the p_val that was created above.
+      left_join(expr_data, join_by(Species2 == Genes)) %>%
+      select(-c("Species1", "Max.p.val", "OrthoGroup")) %>%
+      as_tibble() %>%
+      column_to_rownames(var = "Species2") %>%
+      select(contains("1."))
+  }}
+
+    corr_matrix <- round(cor(s1_fs,s2_fs, method = "pearson"), 4) # Correlation matrix using the filtered + sorted
+    new_name <- as.character(paste0("corr_",key_word_s1, "-",key_word_s2))
+    mv("corr_matrix", new_name) 
+    print(cat("Pair: ",key_word_s1, "-", key_word_s2))
+  }
+  
+  }
+
+
+```
+
+## Transposing matrices
+
+```{r transposing certain matrices v1}
+
+# As there have been changes to corr_list - we need to make a new list
+to_transpose <- c("corr_Lodge-Asp", "corr_Lodge-Birch", "corr_Lodge-Cher",  "corr_Lodge-Scots",  "corr_Lodge-Nor","corr_Scots-Birch", "corr_Nor-Birch", "corr_Nor-Cher", "corr_Scots-Cher")
+
+for(x in to_transpose){
+    key_word_s1 <- sapply(strsplit(x, "_"), "[",2)
+    key_word_s1 <- sapply(strsplit(key_word_s1, "-"), "[",1)
+    key_word_s2 <- sapply(strsplit(x, "-"), "[",2) 
+
+    corr_t <- t(get(x))
+    new_name <- as.character(paste0("corr_",key_word_s2, "-",key_word_s1))
+    mv("corr_t", new_name) 
+    rm(list = x)
+    
+   print(x) 
+}
+
+
+```
+
+## Individual heatmaps
+
+```{r heatmap as own loop v2}
+
+
+
+corr_list <- c("corr_Asp-Cher", "corr_Asp-Scots", "corr_Asp-Nor", "corr_Asp-Lodge","corr_Cher-Lodge", "corr_Asp-Birch", "corr_Birch-Cher", "corr_Birch-Nor", "corr_Birch-Lodge", "corr_Birch-Scots", "corr_Cher-Scots", "corr_Cher-Nor", "corr_Nor-Lodge", "corr_Nor-Scots", "corr_Scots-Lodge")
+
+length(corr_list)
+# ------------------ HEATMAP ---------------------------------  
+
+
+# Function for the legend colour.
+col_function_1 <- colorRamp2(c(0, 0.5, 1), c("#0571b0", "#f7f7f7","#ca0020" ))
+lgd_1 = Legend(col_fun = col_function_1, title = "Correlation", title_gp = gpar(fontsize = 20) , legend_height = unit(12, "cm"), grid_width = unit(1, "cm"), labels_gp = gpar(fontsize = 20),at = c(0, 0.5, 1), title_gap =  unit(0.5, "cm"))
+lgd_1_grob <- grid.grabExpr(draw(lgd_1))
+
+# All on same sep legend
+
+for(matrix in corr_list){
+    
+    key_word_s1 <- sapply(strsplit(matrix, "_"), "[",2)
+    key_word_s1 <- sapply(strsplit(key_word_s1, "-"), "[",1)
+    key_word_s2 <- sapply(strsplit(matrix, "-"), "[",2)
+
+    print(matrix)
+  
+
+   hm <-  Heatmap(get(matrix),column_title = paste0(key_word_s1,"-", key_word_s2),show_column_names = FALSE, 
+                  show_row_names = FALSE,
+    column_title_gp = gpar(fontsize = 15),
+
+    width = ncol(get(matrix))*unit(5, "mm"),
+    height = nrow(get(matrix))*unit(5, "mm"),
+    row_order = 1:nrow(get(matrix)),
+    column_order = 1:ncol(get(matrix)), show_heatmap_legend = F, col = col_function_1) 
+
+    new_name <- as.character(paste0("hm-",key_word_s1, "-",key_word_s2))
+    mv("hm", new_name) # rename the heatmaps for plotting in grid.
+    
+}
+
+```
+
+## Plotting
+
+
+```{r converting to grob h}
+
+g1 <- grid.grabExpr(print(`hm-Asp-Birch`)) #
+g2 <- grid.grabExpr(print(`hm-Asp-Cher`)) #
+g3 <- grid.grabExpr(print(`hm-Birch-Cher`)) 
+g4 <- grid.grabExpr(print(`hm-Asp-Nor`)) #
+g5 <- grid.grabExpr(print(`hm-Birch-Nor`)) #
+g6 <- grid.grabExpr(print(`hm-Cher-Nor`)) #
+g7 <- grid.grabExpr(print(`hm-Asp-Scots`)) #
+g8 <- grid.grabExpr(print(`hm-Birch-Scots`))
+g9 <- grid.grabExpr(print(`hm-Cher-Scots`))
+g10 <- grid.grabExpr(print(`hm-Nor-Scots`)) # 
+g11 <- grid.grabExpr(print(`hm-Asp-Lodge`))
+g12 <- grid.grabExpr(print(`hm-Birch-Lodge`))
+g13 <- grid.grabExpr(print(`hm-Cher-Lodge`))
+g14 <- grid.grabExpr(print(`hm-Nor-Lodge`))
+g15 <- grid.grabExpr(print(`hm-Scots-Lodge`))
+
+
+```
+
+
+```{r fig.height=40, fig.width=40}
+
+# All rows, 30x30
+# Grid is 6x6
+
+# Horizontal main
+plot_grid(g11, g7, g4, g2, g1, NULL,
+          g12, g8, g5, g3, NULL, NULL,
+          g13, g9, g6, NULL, NULL, lgd_1_grob,
+          g14, g10, NULL, NULL, NULL,NULL,
+          g15, NULL, NULL, NULL, NULL, NULL,
+          ncol = 6, nrow = 6)
+
+
+```
+

@@ -1,0 +1,301 @@
+---
+title: "ComPlEx - copy"
+author: "Ellen Dimmen Chapple"
+date: "2023-08-28"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libraries}
+library(dplyr)
+library(tidyr)
+```
+
+
+```{r}
+setwd("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/ComPlEx")
+```
+
+
+
+# SETTING UP SPECIES AND INPUT FILES
+
+```{r character vectors}
+
+# Species name in Plaza
+species1_name <- "Asp"
+# species2_name <- "Birch"
+# species2_name <- "Cher"
+species2_name <- "Nor"
+#species2_name <- "NorOld"
+# species2_name <- "Scots"
+
+# Expression files
+species1_expr_file <- "Data/DATA/AspWood_transcriptomics.txt"
+# species2_expr_file <- "Data/DATA/BirchWood_transcriptomics.txt"
+#species2_expr_file <- "Data/DATA/CherWood_transcriptomics.txt"
+ species2_expr_file <- "Data/DATA/NorWood_transcriptomics.txt"
+# species2_expr_file <- "../NorWoodOld/NorWood_transcriptomics.txt"
+# species2_expr_file <- "Data/DATA/ScotsWood_transcriptomics.txt"
+
+# Ortholog groups
+#ortholog_group_file <- "../DATA/orthologs.ORTHO.plantgenie.txt.gz"
+#ortholog_group_file <- "../DATA/Orthogroups_prelim_Jan23.tsv"
+ortholog_group_file <- "Data/DATA/Orthogroups.100323.tsv"
+ortholog_group_file_read <- read.delim("Data/DATA/Orthogroups.100323.tsv")
+cat("ComPlEX:", species1_name, species2_name, "\n")
+```
+
+
+# CREATING AND/OR LOADING ORTHOLOG_GROUP FILES AND EXPRESSION DATA
+
+```{r}
+# Read in ortholog groups
+# =======================
+
+# Reading in and parsing the orthogroup file takes time. Parsed results are saved
+# and used if they exists.
+ortholog_group_RData <- paste0("Data/DATA/orthologs-", species1_name, "-", species2_name, ".RData")
+
+if (!file.exists(ortholog_group_RData)) {
+  
+  # PlantGenIE PLAZA
+  # ortho <- read.delim(ortholog_group_file) %>%
+  #   filter(species == species1_name) %>%
+  #   group_by(gene_content) %>%
+  #   mutate(OrthoGroup = cur_group_id()) %>%
+  #   ungroup() %>%
+  #   separate_rows(gene_content, sep = ";", convert = FALSE) %>%
+  #   filter(grepl(species2_name, gene_content)) %>%
+  #   separate(gene_content, into = c("prefix", "gene_content"), sep = ":") %>%
+  #   separate_rows(gene_content, sep = ",", convert = FALSE) %>%
+  #   mutate(Species1 = gene_id, Species2 = gene_content) %>%
+  #   select(Species1, Species2, OrthoGroup)
+  
+  # # Asp Birch
+  # ortho <- read.delim2(ortholog_group_file, header = TRUE, sep = "\t") %>%
+  #   dplyr::rename(Species1 = Poptre.SHORT.pep, Species2 = Betpen.SHORT.pep, OrthoGroup = Orthogroup) %>%
+  #   # can we alter all species in one go? Can rename them to Species1 and Species2 at a later point.
+  #   # Perhaps have a pre-processing of ortho, then do the next steps in filtering and altering the names.
+  #   select(Species1, Species2, OrthoGroup) %>%
+  #   filter(Species1 != "", Species2 != "") %>%
+  #   separate_rows(Species1, sep = ", ", convert = FALSE) %>%
+  #   separate_rows(Species2, sep = ", ", convert = FALSE) %>%
+  #   mutate(Species1 = gsub("\\.\\d\\.p\\d$", "", Species1)) %>%
+  #   mutate(Species1 = gsub("Poptre_", "", Species1)) %>%
+  #   mutate(Species2 = gsub("Betpen_", "", Species2)) %>%
+  #   group_by(Species1, Species2, OrthoGroup) %>%
+  #   dplyr::slice(1)
+
+  # Asp Nor
+  ortho <- read.delim2(ortholog_group_file, header = TRUE, sep = "\t") %>%
+    dplyr::rename(Species1 = Poptre.SHORT.pep, Species2 = Picabi.SHORT.pep, OrthoGroup = Orthogroup) %>%
+    select(Species1, Species2, OrthoGroup) %>%
+    filter(Species1 != "", Species2 != "") %>%
+    separate_rows(Species1, sep = ", ", convert = FALSE) %>%
+    separate_rows(Species2, sep = ", ", convert = FALSE) %>%
+    mutate(Species1 = gsub("\\.\\d\\.p\\d$", "", Species1)) %>%
+    mutate(Species2 = gsub("\\.p\\d$", "", Species2)) %>%
+    mutate(Species1 = gsub("Poptre_", "", Species1)) %>%
+    group_by(Species1, Species2, OrthoGroup) %>%
+    dplyr::slice(1)
+
+  # Asp Scots
+  # ortho <- read.delim2(ortholog_group_file, header = TRUE, sep = "\t") %>%
+  #   dplyr::rename(Species1 = Poptre.SHORT.pep, Species2 = Pinsyl.SHORT.pep, OrthoGroup = Orthogroup) %>%
+  #   select(Species1, Species2, OrthoGroup) %>%
+  #   filter(Species1 != "", Species2 != "") %>%
+  #   separate_rows(Species1, sep = ", ", convert = FALSE) %>%
+  #   separate_rows(Species2, sep = ", ", convert = FALSE) %>%
+  #   mutate(Species1 = gsub("\\.\\d\\.p\\d$", "", Species1)) %>%
+  #   mutate(Species1 = gsub("Poptre_", "", Species1)) %>%
+  #   group_by(Species1, Species2, OrthoGroup) %>%
+  #   dplyr::slice(1)
+  # 
+  # Asp Cher
+  # ortho <- read.delim2(ortholog_group_file, header = TRUE, sep = "\t") %>%
+  #   dplyr::rename(Species1 = Poptre.SHORT.cds, Species2 = Prunavi.SHORT.cds, OrthoGroup = Orthogroup) %>%
+  #   select(Species1, Species2, OrthoGroup) %>%
+  #   filter(Species1 != "", Species2 != "") %>%
+  #   separate_rows(Species1, sep = ", ", convert = FALSE) %>%
+  #   separate_rows(Species2, sep = ", ", convert = FALSE) %>%
+  #   mutate(Species1 = gsub("\\.\\d$", "", Species1)) %>%
+  #   mutate(Species2 = gsub("Prunavi_", "", Species2)) %>%
+  #   group_by(Species1, Species2, OrthoGroup) %>%
+  #   dplyr::slice(1)
+  
+  # Birch Cher
+  # ortho <- read.delim2(ortholog_group_file, header = TRUE, sep = "\t") %>%
+  #   dplyr::rename(Species1 = Betpen.SHORT.cds, Species2 = Prunavi.SHORT.cds, OrthoGroup = Orthogroup) %>%
+  #   select(Species1, Species2, OrthoGroup) %>%
+  #   filter(Species1 != "", Species2 != "") %>%
+  #   separate_rows(Species1, sep = ", ", convert = FALSE) %>%
+  #   separate_rows(Species2, sep = ", ", convert = FALSE) %>%
+  #   mutate(Species2 = gsub("Prunavi_", "", Species2)) %>%
+  #   group_by(Species1, Species2, OrthoGroup) %>%
+  #   dplyr::slice(1)
+  
+  # Add annotations from arabidopsis
+  symbols <- read.delim("Data/DATA/gene_aliases_20140331.txt", sep = "\t") %>%
+    dplyr::rename(Arab = locus_name, Symbol = symbol, Name = full_name)
+  
+  annot <- read.delim2(ortholog_group_file, header = TRUE, sep = "\t") %>%
+    dplyr::rename(Arab = Aratha.SHORT.pep, OrthoGroup = Orthogroup) %>%
+    select(Arab, OrthoGroup) %>%
+    filter(Arab != "") %>%
+    separate_rows(Arab, sep = ", ", convert = FALSE) %>%
+    mutate(Arab = gsub("\\.\\d.p\\d$", "", Arab)) %>%
+    mutate(Arab = gsub("Aratha_", "", Arab)) %>%
+    left_join(symbols, by = "Arab") %>%
+    group_by(OrthoGroup) %>%
+    summarise(Arab = paste0(unique(Arab), collapse = "; "), 
+           Symbol = paste0(unique(Symbol), collapse = "; "), 
+           Name = paste0(unique(Name), collapse = "; ")) %>%
+    mutate(Symbol = gsub("NA", "", Symbol),
+           Name = gsub("NA", "", Name))
+
+  save(ortho, annot, file = ortholog_group_RData)
+} else {
+  load(file = ortholog_group_RData)
+}
+
+# Read in expression data
+# =======================
+
+species1_expr <- read.delim(species1_expr_file, sep = "\t", header = TRUE) 
+
+species2_expr <- read.delim(species2_expr_file, sep = "\t", header = TRUE)
+# Filter
+# ======
+
+cat (length(unique(ortho$OrthoGroup)), " ortholog groups containing:\n",
+     " ", length(unique(ortho$Species1)), " ", species1_name, " genes\n",
+     " ", length(unique(ortho$Species2)), " ", species2_name, " genes\n\n",
+     length(unique(species1_expr$Genes)), " expressed ", species1_name, " genes\n",
+     length(unique(species2_expr$Genes)), " expressed ", species2_name, " genes\n",
+     sep = "")
+
+```
+
+
+
+```{r}
+
+ortho <- ortho %>%
+  filter(Species1 %in% species1_expr$Genes & Species2 %in% species2_expr$Genes)
+
+species1_expr <- species1_expr[species1_expr$Genes %in% ortho$Species1,]
+species2_expr <- species2_expr[species2_expr$Genes %in% ortho$Species2,]
+
+cat ("After filtering on expressed genes with ortholog:\n",
+     " ", length(unique(ortho$OrthoGroup)), " ortholog groups containing: \n",
+     "  ", length(unique(ortho$Species1)), " ", species1_name, " genes\n",
+     "  ", length(unique(ortho$Species2)), " ", species2_name, " genes\n",
+     sep = "")
+
+
+# species1_expr - dim: 23.246 x 106 --> 16.422 x 106
+# species2_expr - dim: 16.841 x 82  --> 12.598 x 82
+# ortho -         dim: 83.443 x 3   --> 42. 483 x 3
+
+```
+
+
+```{r}
+
+cor_method <- "pearson" # pearson spearman
+cor_sign <- "" # abs
+norm_method <- "MR" # CLR MR
+density_thr <- 0.03
+randomize <- "no" # yes no
+
+comparison_RData <- paste0("RData/comparison-", species1_name, "-", species2_name, "-", 
+                           cor_sign, cor_method, norm_method, density_thr, randomize, ".RData")
+
+if (!file.exists(comparison_RData)) {
+  
+  if (randomize == "yes") {
+    species1_expr$Genes <- sample(species1_expr$Genes, nrow(species1_expr), FALSE)
+    species2_expr$Genes <- sample(species2_expr$Genes, nrow(species2_expr), FALSE)
+  }
+  
+  species1_net <- cor(t(species1_expr[,-1]), method = cor_method)
+  dimnames(species1_net) <- list(species1_expr$Genes, species1_expr$Genes)
+  
+  species2_net <- cor(t(species2_expr[,-1]), method = cor_method)
+  dimnames(species2_net) <- list(species2_expr$Genes, species2_expr$Genes)
+  
+  if (cor_sign == "abs") {
+    species1_net <- abs(species1_net)
+    species2_net <- abs(species2_net)
+  }
+  
+  if (norm_method == "CLR") {
+    #species1_net <- matrix(c(1,0.1,0.2,0.1,1,1,0.2,1,1), nrow = 3, byrow = TRUE)
+    
+    z <- scale(species1_net)
+    z[z < 0] <- 0
+    species1_net <- sqrt(t(z)**2 + z**2)
+    
+    z <- scale(species2_net)
+    z[z < 0] <- 0
+    species2_net <- sqrt(t(z)**2 + z**2)
+    
+  } else if (norm_method == "MR") {
+    R <- t(apply(species1_net, 1, rank))
+    species1_net <- sqrt(R * t(R))
+    
+    R <- t(apply(species2_net, 1, rank))
+    species2_net <- sqrt(R * t(R))
+  }
+  
+  diag(species1_net) <- 0
+  diag(species2_net) <- 0
+  
+  R <- sort(species1_net[upper.tri(species1_net, diag = FALSE)], decreasing = TRUE)
+  species1_thr <- R[round(density_thr*length(R))]
+  plot(density(R), xlab = paste0(species1_name, " correlations"), main = "")
+  
+  R <- sort(species2_net[upper.tri(species2_net, diag = FALSE)], decreasing = TRUE)
+  species2_thr <- R[round(density_thr*length(R))]
+  plot(density(R), xlab = paste0(species2_name, " correlations"), main = "")
+  
+} else {
+  load(file = comparison_RData)
+}
+
+cat("Correlation: ", cor_method, "\n",
+    "Normalization: ", norm_method, "\n",
+    "Density: ", density_thr, "\n",
+    "Randomization: ", randomize, "\n\n",
+    species1_name, " co-expr threshold: ", format(species1_thr, digits = 3) , "\n",
+    species2_name, " co-expr threshold: ", format(species2_thr, digits = 3) , "\n",
+    sep = "")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

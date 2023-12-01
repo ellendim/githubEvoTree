@@ -1,0 +1,377 @@
+---
+title: "ComPlEx - copy"
+author: "Ellen Dimmen Chapple"
+date: "2023-08-28"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libraries and wd}
+library(dplyr)
+library(tidyr)
+library(gdata)
+
+setwd("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/ComPlEx")
+```
+
+
+# SETTING UP SPECIES AND INPUT FILES
+
+```{r}
+
+species_list <- c("Asp", "Nor", "Scots", "Cher", "Birch")
+# species2_list <- c("Asp", "Nor", "Scots","Cher", "Birch")
+
+# List of all combinations, each combination only occurring once.
+combo <- data.frame(t(combn(species_list, 2)))
+transcript_file <- c()
+for (i in species_list){
+  file_name <- paste0("Data/DATA/",i,"Wood_transcriptomics.txt")
+  transcript_file <- append(transcript_file, file_name, after = length(transcript_file))
+    
+}
+
+# Creating ortho
+ortholog_group_RData <- c()
+for (i in 1:nrow(combo)){
+  s1 <- combo[i, "X1"]
+  s2 <- combo[i, "X2"]
+  
+  group_file_name <- paste0("Data/DATA/orthologs_",s1,"-",s2,".RData")
+  ortholog_group_RData <- append(ortholog_group_RData, group_file_name, after = length(ortholog_group_RData))
+
+}
+
+ortholog_group_file <- "Data/DATA/Orthogroups.100323.tsv"
+
+```
+
+
+
+# CREATING AND/OR LOADING ORTHOLOG_GROUP FILES AND EXPRESSION DATA
+
+
+```{r}
+# Test for  Asp-Nor
+
+
+for (file in ortholog_group_RData) {
+  if (!file.exists(file)){ 
+    # OG_RData <-
+    #   ortholog_group_RData [1]  # REMOVE THIS LINE BEFORE RUNNING LOOP.
+    ortho_original <- read.delim2(ortholog_group_file, header = TRUE, sep = "\t")
+    ortho_general_filtering <- ortho_original %>%
+      # mutate(Asp = gsub("\\.\\d\\.p\\d$", "", Poptre.SHORT.pep)) %>% # Removing the original column after mutation -- does this have an effect??
+      rename(
+        Asp = Poptre.SHORT.pep,
+        Birch = Betpen.SHORT.pep,
+        Nor = Picabi.SHORT.pep,
+        Scots = Pinsyl.SHORT.pep,
+        Cher = Prunavi.SHORT.pep,
+        OrthoGroup = Orthogroup
+      ) %>%
+      mutate(Asp = gsub("Poptre_", "", Asp)) %>%
+      mutate(Birch = gsub("Betpen_", "", Birch)) %>%
+      mutate(Cher = gsub("Prunavi_", "", Cher)) %>% 
+      mutate(Asp = gsub("\\.\\d\\.p\\d$", "", Asp)) %>%
+      mutate(Nor = gsub("\\.p\\d$", "", Nor)) %>%
+      select(OrthoGroup, Asp, Nor, Scots, Birch, Cher)
+    
+    
+    # Extract key words for species 1 and 2, uses the string "Data/DATA/orthologs_SPECIES1-SPECIES2.RData" from ortholog_group_RData.
+    species1_key_word <- sapply(strsplit(file, "-"), "[", 1)
+    species1_key_word <-
+      sapply(strsplit(species1_key_word, "_"), "[", 2)
+    species2_key_word <- sapply(strsplit(file, "-"), "[", 2)
+    species2_key_word <-
+      sapply(strsplit(species2_key_word, "[.]"), "[", 1)
+
+    # species1_key_word <- "Asp"
+    # species2_key_word <- "Nor"
+    
+        # Select the columns in ortho corresponding to the key words from the the ortholog-file name.
+    ortho <- ortho_general_filtering %>%
+      rename(Species1 = species1_key_word, Species2 = species2_key_word) %>%
+      select(OrthoGroup, Species1, Species2) %>%
+      filter(Species1 != "", Species2 != "") %>%
+      separate_rows(Species1, sep = ", ", convert = FALSE) %>%
+      separate_rows(Species2, sep = ", ", convert = FALSE) %>%
+      group_by(OrthoGroup) %>% 
+      slice(1)
+    
+    # Add annotations from arabidopsis
+    symbols <-
+      read.delim("Data/DATA/gene_aliases_20140331.txt", sep = "\t") %>%
+      rename(Arab = locus_name,
+                    Symbol = symbol,
+                    Name = full_name)
+
+    annot <-
+      read.delim2(ortholog_group_file, header = TRUE, sep = "\t") %>%
+      rename(Arab = Aratha.SHORT.pep, OrthoGroup = Orthogroup) %>%
+      select(Arab, OrthoGroup) %>%
+      filter(Arab != "") %>%
+      separate_rows(Arab, sep = ", ", convert = FALSE) %>%
+      mutate(Arab = gsub("\\.\\d.p\\d$", "", Arab)) %>%
+      mutate(Arab = gsub("Aratha_", "", Arab)) %>%
+      left_join(symbols, by = "Arab") %>%
+      group_by(OrthoGroup) %>%
+      summarise(
+        Arab = paste0(unique(Arab), collapse = "; "),
+        Symbol = paste0(unique(Symbol), collapse = "; "),
+        Name = paste0(unique(Name), collapse = "; ")
+      ) %>%
+      mutate(Symbol = gsub("NA", "", Symbol),
+             Name = gsub("NA", "", Name))
+    
+    
+    
+    
+    new_name <- as.character(paste0("ortho_",species1_key_word, "-",species2_key_word))
+    mv("ortho", new_name)
+    # save(, annot, file = file)
+    
+    } 
+  else {
+    load(file = ortholog_group_RData)
+  }
+  
+  
+}
+
+# species1_expr <-
+  #   read.delim(species1_expr_file, sep = "\t", header = TRUE)
+  # 
+  # species2_expr <-
+  #   read.delim(species2_expr_file, sep = "\t", header = TRUE)
+  # 
+  # # Filter
+  # # ======
+  # 
+  # cat (
+  #   length(unique(ortho$OrthoGroup))," ortholog groups containing:\n"," ", length(unique(ortho$Species1))," ",species1_name,
+  #   " genes\n", " ",length(unique(ortho$Species2)), " ",species2_name,"genes\n\n",length(unique(species1_expr$Genes))," expressed ",
+  #   species1_name, " genes\n", length(unique(species2_expr$Genes)), " expressed ", species2_name, " genes\n",  sep = "")
+  # 
+
+```
+
+
+
+
+```{r}
+
+# Filtering the ortho-data
+
+
+
+
+ortho_filtered <- ortho %>%
+  filter(Species1 %in% species1_expr$Genes & Species2 %in% species2_expr$Genes)
+
+species1_expr <- species1_expr[species1_expr$Genes %in% ortho$Species1,]
+species2_expr <- species2_expr[species2_expr$Genes %in% ortho$Species2,]
+
+cat ("After filtering on expressed genes with ortholog:\n",
+     " ", length(unique(ortho$OrthoGroup)), " ortholog groups containing: \n",
+     "  ", length(unique(ortho$Species1)), " ", species1_name, " genes\n",
+     "  ", length(unique(ortho$Species2)), " ", species2_name, " genes\n",
+     sep = "")
+
+
+
+
+
+```
+
+
+```{r}
+
+cor_method <- "pearson" # pearson spearman
+cor_sign <- "" # abs
+norm_method <- "MR" # CLR MR
+density_thr <- 0.03
+randomize <- "no" # yes no
+
+
+
+
+comparison_RData <- paste0("RData/comparison-", species1_name, "-", species2_name, "-", 
+                           cor_sign, cor_method, norm_method, density_thr, randomize, ".RData")
+
+if (!file.exists(comparison_RData)) {
+  
+  if (randomize == "yes") {
+    species1_expr$Genes <- sample(species1_expr$Genes, nrow(species1_expr), FALSE)
+    species2_expr$Genes <- sample(species2_expr$Genes, nrow(species2_expr), FALSE)
+  }
+  
+  species1_net <- cor(t(species1_expr[,-1]), method = cor_method)
+  dimnames(species1_net) <- list(species1_expr$Genes, species1_expr$Genes)
+  
+  species2_net <- cor(t(species2_expr[,-1]), method = cor_method)
+  dimnames(species2_net) <- list(species2_expr$Genes, species2_expr$Genes)
+  
+  if (cor_sign == "abs") {
+    species1_net <- abs(species1_net)
+    species2_net <- abs(species2_net)
+  }
+  
+  if (norm_method == "CLR") {
+    #species1_net <- matrix(c(1,0.1,0.2,0.1,1,1,0.2,1,1), nrow = 3, byrow = TRUE)
+    
+    z <- scale(species1_net)
+    z[z < 0] <- 0
+    species1_net <- sqrt(t(z)**2 + z**2)
+    
+    z <- scale(species2_net)
+    z[z < 0] <- 0
+    species2_net <- sqrt(t(z)**2 + z**2)
+    
+  } else if (norm_method == "MR") {
+    R <- t(apply(species1_net, 1, rank))
+    species1_net <- sqrt(R * t(R))
+    
+    R <- t(apply(species2_net, 1, rank))
+    species2_net <- sqrt(R * t(R))
+  }
+  
+  diag(species1_net) <- 0
+  diag(species2_net) <- 0
+  
+  R <- sort(species1_net[upper.tri(species1_net, diag = FALSE)], decreasing = TRUE)
+  species1_thr <- R[round(density_thr*length(R))]
+  #plot(density(R), xlab = paste0(species1_name, " correlations"), main = "")
+  
+  R <- sort(species2_net[upper.tri(species2_net, diag = FALSE)], decreasing = TRUE)
+  species2_thr <- R[round(density_thr*length(R))]
+  #plot(density(R), xlab = paste0(species2_name, " correlations"), main = "")
+  
+} else {
+  load(file = comparison_RData)
+}
+
+cat("Correlation: ", cor_method, "\n",
+    "Normalization: ", norm_method, "\n",
+    "Density: ", density_thr, "\n",
+    "Randomization: ", randomize, "\n\n",
+    species1_name, " co-expr threshold: ", format(species1_thr, digits = 3) , "\n",
+    species2_name, " co-expr threshold: ", format(species2_thr, digits = 3) , "\n",
+    sep = "")
+
+```
+
+
+```{r}
+
+if (!file.exists(comparison_RData)) {
+
+  comparison <- ortho
+  
+  comparison$Species1.neigh <- c(NA)
+  comparison$Species1.ortho.neigh <- c(NA)
+  comparison$Species1.neigh.overlap <- c(NA)
+  comparison$Species1.p.val <- c(NA)
+  
+  comparison$Species2.neigh <- c(NA)
+  comparison$Species2.ortho.neigh <- c(NA)
+  comparison$Species2.neigh.overlap <- c(NA)
+  comparison$Species2.p.val <- c(NA)
+  
+  for (i in 1:nrow(ortho)) {
+    
+    if (i %% 100 == 0) {
+      cat(i, "\n")
+    }
+    
+    # Species 1 -> Species 2
+    
+    neigh <- species1_net[ortho$Species1[1],] # the row belonging to species 1 gene in row i. Remember, this is gene i's correlation to all other genes in the other columns.
+    neigh <- names(neigh[neigh >= species1_thr]) # get the names of the genes with higher/equal density than/to the threshold - and set them to the variable neigh. Creating a character vector.
+    
+    ortho_neigh <- species2_net[ortho$Species2[1],] # same as above, but for S2.
+    ortho_neigh <- names(ortho_neigh[ortho_neigh >= species2_thr])
+    ortho_neigh <- ortho$Species1[ortho$Species2 %in% ortho_neigh] # 
+    
+    N <- nrow(species1_expr)
+    m <- length(neigh)
+    n <- N-m
+    k <- length(ortho_neigh)
+    x <- length(intersect(neigh, ortho_neigh))
+    p_val <- 1
+    if (x > 1) {
+      p_val <- phyper(x-1, m, n, k, lower.tail = FALSE)
+    }
+    
+    comparison$Species1.neigh[i] <- m
+    comparison$Species1.ortho.neigh[i] <- k
+    comparison$Species1.neigh.overlap[i] <- x
+    comparison$Species1.p.val[i] <- p_val
+    
+    # Species 2 -> Species 1
+    
+    neigh <- species2_net[ortho$Species2[i],]
+    neigh <- names(neigh[neigh >= species2_thr])
+    
+    ortho_neigh <- species1_net[ortho$Species1[i],]
+    ortho_neigh <- names(ortho_neigh[ortho_neigh >= species1_thr])
+    ortho_neigh <- ortho$Species2[ortho$Species1 %in% ortho_neigh]
+    
+    N <- nrow(species2_expr)
+    m <- length(neigh)
+    n <- N-m
+    k <- length(ortho_neigh)
+    x <- length(intersect(neigh, ortho_neigh))
+    p_val <- 1
+    if (x > 1) {
+      p_val <- phyper(x-1, m, n, k, lower.tail = FALSE)
+    }
+    
+    comparison$Species2.neigh[i] <- m
+    comparison$Species2.ortho.neigh[i] <- k
+    comparison$Species2.neigh.overlap[i] <- x
+    comparison$Species2.p.val[i] <- p_val
+  }
+  
+  save(comparison, species1_thr, species2_thr, file = comparison_RData)
+}
+
+# Filter orthologs not in the networks
+comparison <- comparison %>%
+  filter(Species1.neigh.overlap > 0 & Species2.neigh.overlap > 0)
+
+# FDR correction
+comparison$Species1.p.val <- p.adjust(comparison$Species1.p.val, method = "fdr")
+comparison$Species2.p.val <- p.adjust(comparison$Species2.p.val, method = "fdr")
+
+cat ("After filtering on gene pairs in the networks:\n",
+     " ", length(unique(comparison$OrthoGroup)), " ortholog groups containing: \n",
+     "  ", length(unique(comparison$Species1)), " ", species1_name, " genes\n",
+     "  ", length(unique(comparison$Species2)), " ", species2_name, " genes\n",
+     sep = "")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
