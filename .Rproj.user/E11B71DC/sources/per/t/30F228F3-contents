@@ -1,0 +1,750 @@
+---
+title: "Aspen Co-expression Network Analysis - year around"
+author: "Torgeir R. Hvidsten"
+date: '`r format(Sys.time(), "%d.%m.%Y")`'
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: yeti
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(stringsAsFactors = FALSE)
+
+library(knitr)
+library(tidyverse)
+library(ggrepel)
+
+library(WGCNA)
+library(DESeq2)
+library(gplots)
+library(pheatmap)
+library(cowplot)
+
+library(DT)
+
+library(GOstats)
+library(GSEABase)
+
+
+
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+#ext <- "1_3_2_leaf_outdoor"
+# bud lead greenhouse outdoors all
+ext <- "1_3_2_year_around_v2"
+compute = FALSE
+
+```
+
+## Load and preprocess data
+
+Load and preprocess data. Remove genes with less than 10 reads. Variance stabilize transformation (VST, an advanced log2-transformation).
+
+```{r filter, warning=FALSE, message=FALSE}
+
+# Load and normalize count data - organize meta data
+if (FALSE) {
+  
+  # Get count data
+  counts <- read_delim("data/raw-unormalised-gene-expression_selected-network-data.tsv",'\t') %>%
+    column_to_rownames(var = "geneID") %>%
+    dplyr::select(-P12869_260) # Very low count
+  
+  cat("Genes x Samples: ", paste0(dim(counts), collapse = " x "))
+  
+  # Get meta data and order according to expression table
+  samples.sep <- read_delim("data/Sample annotation.txt",'\t', progress = FALSE) %>%
+    mutate(Samples = paste0(P1, "_", P2)) %>%
+    mutate(Location = gsub("circadian|growth_cessation|PIFs|miRNAs|phytochrome|bud_flush|FT1_CRISPR", 
+                              "Greenhouse", Experiment)) %>%
+    mutate(Location = gsub("year-around", "Outdoor", Location)) %>% 
+    relocate(Samples) %>%
+    mutate(Week = as.numeric(Week)) %>%
+    mutate(Month = ifelse(str_length(S1) == 3, S1, "Unknown")) %>%
+    mutate(Month = gsub("T89|TLL|TSL", "Unknown", Month)) %>%
+    mutate(Month = factor(Month, levels = c("SEP", "OCT", "DEC", "JAN", "FEB", "MAR", "APR", 
+                                            "MAY", "JUN", "JUL", "AUG"))) %>%
+    relocate(Month, .after = Week) %>%
+    filter(Samples %in% colnames(counts))
+  
+  idx <- match(colnames(counts), samples.sep$Samples)
+  samples.sep <- samples.sep[idx,]
+  
+  # ... check that the order is correct
+  sum(samples.sep$Samples != colnames(counts))
+  
+  # Normalize between samples
+  data <- varianceStabilizingTransformation(round(as.matrix(counts)))
+  data <- data - min(data)
+  
+  # Filter expressed genes
+  idx <- rowSums(counts) >= 10
+  data <- data[idx,]
+  
+  # Number of expressed genes
+  samples.sep$Expression <- colSums(data)
+  
+  cat("Genes x Samples: ", paste0(dim(data), collapse = " x "))
+  
+  remove(counts, idx)
+  
+  save(data, samples.sep, file = paste0("data/gene-expression-VST.RData"))
+}
+
+# Load the expression data
+if (compute) {
+
+  load("data/gene-expression-VST.RData")
+  
+  cat("Genes x Samples: ", paste0(dim(data), collapse = " x "))
+  
+  # Select samples
+  samples.sep <- samples.sep #%>%
+    #filter(Location == "Greenhouse") # Tissue: Bud Leaf, Location: Outdoor Greenhouse
+  data <- data[, colnames(data) %in% samples.sep$Samples]
+  
+  # Filter expressed genes
+  data <- data[rowSums(data) > 0, ]
+  
+  cat("Genes x Samples: ", paste0(dim(data), collapse = " x "))
+  
+  save(data, samples.sep, file = paste0("RData/data_", ext, ".RData"))
+} else {
+  load(paste0("RData/data_", ext, ".RData"))
+}
+
+cat("Genes x Samples: ", paste0(dim(data), collapse = " x "))
+
+datatable(samples.sep, 
+          rownames = FALSE, filter = "top",
+          options = list(
+            columnDefs = list(list(className = 'dt-center', targets = "_all"))
+            )
+          )
+
+```
+
+## PCA
+
+Principal Component Analysis to get an overview of the data.
+
+```{r pca, warning=FALSE, message=FALSE}
+
+# PCA
+if (compute) {
+  pc <- prcomp(t(data))
+  save(pc, file = paste0("RData/pca_", ext, ".RData"))
+} else {
+  load(paste0("RData/pca_", ext, ".RData"))
+}
+var.expl <- pc$sdev^2 / sum(pc$sdev^2)
+paste0("Varance explained: ", paste0(format(var.expl[1:5], digits = 2), collapse = " "))
+
+p <- cbind(pc$x, data.frame(Project = samples.sep$P1, 
+                            Genotype = samples.sep$Genotype,
+                            Tissue = samples.sep$Tissue,
+                            Treatment = samples.sep$Treatment,
+                            Week = samples.sep$Week,
+                            Month = samples.sep$Month,
+                            Experiment = samples.sep$Experiment,
+                            Location = samples.sep$Location,
+                            Expression = samples.sep$Expression,
+                            TimeDay = samples.sep$S2
+                            ))
+
+ggplot(p, aes(PC1, PC2, col = Experiment, shape = Tissue, label = Project, size = Expression)) + 
+  xlab(paste0("PC1 (", round(var.expl[1], digits=2),")")) +
+  ylab(paste0("PC2 (", round(var.expl[2], digits=2),")")) +
+  theme_bw() + theme() +
+  geom_point()
+
+```
+
+PCA after removing greenhouse samples not matching any year around
+
+```{r pca2, warning=FALSE, message=FALSE}
+
+# PCA
+
+if (grepl("year_around", ext)) {
+  
+  samples.sep <- samples.sep %>%
+    filter(Experiment %in% c("year-around", "growth_cessation", "FT1_CRISPR", "bud_flush")) %>% 
+    filter(!(Samples %in% c("P10011_117", "P10011_225", "P10011_226") ))
+  
+  data <- data[, colnames(data) %in% samples.sep$Samples]
+  
+  # Filter expressed genes
+  data <- data[rowSums(data) > 0, ]
+  
+  cat("Genes x Samples: ", paste0(dim(data), collapse = " x "))
+  
+  pc <- prcomp(t(data))
+  var.expl <- pc$sdev^2 / sum(pc$sdev^2)
+  
+  p <- cbind(pc$x, data.frame(Project = samples.sep$P1, 
+                              Genotype = samples.sep$Genotype,
+                              Tissue = samples.sep$Tissue,
+                              Treatment = samples.sep$Treatment,
+                              Week = samples.sep$Week,
+                              Month = samples.sep$Month,
+                              Experiment = samples.sep$Experiment,
+                              Location = samples.sep$Location,
+                              Expression = samples.sep$Expression,
+                              TimeDay = samples.sep$S2
+                              ))
+  
+  p1 <- ggplot(p, aes(PC1, PC2, col = Experiment, shape = Tissue, label = Month, size = Expression)) + 
+    xlab(paste0("PC1 (", round(var.expl[1], digits=2),")")) +
+    ylab(paste0("PC2 (", round(var.expl[2], digits=2),")")) +
+    theme_bw() + theme() +
+    geom_point()
+  
+  p2 <- ggplot(p, aes(PC1, PC2, col = Month, shape = Tissue, label = Month, size = Expression)) + 
+    xlab(paste0("PC1 (", round(var.expl[1], digits=2),")")) +
+    ylab(paste0("PC2 (", round(var.expl[2], digits=2),")")) +
+    theme_bw() + theme() +
+    geom_point()
+
+  plot_grid(plotlist = list(p1, p2), ncol = 2)
+  
+  # Order samples by time
+  samples.sep <- samples.sep %>%
+    arrange(Month, Treatment, Week)
+  
+  idx <- match(samples.sep$Samples, colnames(data))
+  data <- data[,idx]
+  
+  # ... check that the order is correct
+  #sum(samples.sep$Samples != colnames(data))
+  
+  # dist.var <- dist(t(data), method="euclidean")
+  # dist.var.tree <- hclust(dist.var, method = "ward.D")
+  # 
+  # var.clusters <- cutree(dist.var.tree, k=4)
+  # dist.var.tree <- as.dendrogram(dist.var.tree)
+  # 
+  # order <- as.numeric(samples.sep$Month)
+  # dist.var.tree <- reorder(dist.var.tree, order, agglo.FUN = mean)
+  # dist.var.tree <- as.hclust(dist.var.tree)
+  # plot(dist.var.tree, cex = 0.5, labels = samples.sep$Month, 
+  #      xlab = "", ylab = "", main = "", sub = "")
+  # 
+  # dist.var.tree.GLOBAL <- dist.var.tree
+}
+
+```
+
+```{r hier, warning=FALSE, message=FALSE}
+
+# Hierarchical clustering
+hier.clust <- function (data.loc, samples.sep.loc, rnames = FALSE) {
+  #dist.var <- as.dist(1-cor(data.loc))
+  dist.var <- dist(t(data.loc), method="euclidean")
+  dist.var.tree <- hclust(dist.var, method = "ward.D")
+  
+  dist.obs <- as.dist(1-cor(t(data.loc)))
+  dist.obs.tree <- hclust(dist.obs, method = "ward.D")
+  
+  samples.sep.loc$S2 <- factor(ifelse(samples.sep.loc$S2 %in% c("Y", "A1", "A2"), 
+                            samples.sep.loc$S2, NA), levels = c("Y", "A1", "A2"))
+  
+  samples.sep.loc$Week[samples.sep.loc$Week == "Unknown"] <- NA
+  
+  annot_col <- data.frame(#Project   = samples.sep.loc$P1,
+                          #Genotype  = samples.sep.loc$Genotype,
+                          S2        = samples.sep.loc$S2,
+                          Tissues   = samples.sep.loc$Tissue,
+                          Treatment = samples.sep.loc$Treatment,
+                          Week      = samples.sep.loc$Week,
+                          Month     = samples.sep.loc$Month,
+                          Experiment   = samples.sep.loc$Experiment,
+                          Location = samples.sep.loc$Location,
+                          check.names = FALSE)
+  rownames(annot_col) <- colnames(data.loc)
+  
+  # Remove annotations with only one value
+  idx_delete <- c()
+  for (i in 1:ncol(annot_col)) {
+    if (length(unique(annot_col[,i])) == 1) {
+      idx_delete <- c(idx_delete, i)
+    }
+  }
+  annot_col[, idx_delete] <- NULL
+  
+  #vals <- unique(samples.sep.loc$Genotype)
+  #genotype_map <- gg_color_hue(length(vals))
+  #names(genotype_map) <- vals
+  
+  vals <- unique(samples.sep.loc$Experiment)
+  experiment_map <- gg_color_hue(length(vals))
+  names(experiment_map) <- vals
+
+  vals <- unique(samples.sep.loc$Location)
+  location_map <- gg_color_hue(length(vals))
+  names(location_map) <- vals
+  
+  vals <- levels(samples.sep.loc$Month)
+  month_map <- gg_color_hue(length(vals))
+  names(month_map) <- vals
+  
+  vals <- levels(samples.sep.loc$S2)
+  s2_map <- gg_color_hue(length(vals))
+  names(s2_map) <- vals
+  
+  annot_colors = list(
+    #Project   = c(P10011 = "grey80", P12108 = "grey60", P12869 = "grey40", P17253 = "grey20"),
+    #Genotype  = genotype_map,
+    S2        = s2_map,
+    Tissues   = c(Bud = "chocolate", Leaf = "darkgreen"), # Shoot = "darkmagenta"
+    Treatment = c(CT = "cyan", LD = "darkorange", SD = "dodgerblue3"),
+    Week      = colorRampPalette(c("white","mediumvioletred"))(15),
+    Month     = month_map,
+    Experiment = experiment_map,
+    Location = location_map
+  )
+
+  p <- pheatmap( mat = as.matrix(data.loc), 
+            cluster_rows = dist.obs.tree,
+            cluster_cols = FALSE, #dist.var.tree.GLOBAL,
+            scale = "row",
+            legend = TRUE,
+            border_color = NA,
+            color = colorRampPalette(c("dodgerblue","white","firebrick"))(10),
+            fontsize = 7,
+            fontsize_row = 8,
+            fontsize_col = 10,
+            srtCol = 45,
+            show_rownames = rnames,
+            show_colnames = FALSE,
+            #labels_col = names,
+            annotation_legend = TRUE,
+            annotation_col = annot_col,
+            #annotation_row = annot_row,
+            annotation_colors = annot_colors,
+  )
+  
+  print(p)
+}
+
+#data.sub <- data[sample(1:nrow(data), 1000, replace = FALSE),]
+#hier.clust(data.sub, samples.sep)
+#hier.clust(data, samples.sep)
+
+```
+
+## Soft thresholding
+
+Find the soft threshold power for the WGCNA network. The correlations in the network is raised to this power so that the network topology approximate that of a scale free network.
+
+```{r soft_thr, warning=FALSE}
+dat_t <- t(data)
+powers = c(c(1:10), seq(from = 12, to=20, by=2))
+if (compute) {
+  sft = pickSoftThreshold(dat_t, powerVector = powers, corFnc = "bicor", networkType = "signed")
+  save(sft, file = paste0("RData/sft_", ext, ".RData"))
+} else {
+  load(paste0("RData/sft_", ext, ".RData"))
+}
+# Plot the results
+cex1 = 0.9;
+# Scale-free topology fit index as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit R^2",type="n",
+     main = paste("Scale independence"));
+text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     labels=powers,cex=cex1,col="red");
+# this line corresponds to using an R^2 cut-off of h
+abline(h=0.80,col="red")
+
+power <- sft$powerEstimate
+power <- 10 # 12
+```
+
+## Network module finding
+
+Find network modules (clusters) and do some plotting to show the similarity within and between modules.
+
+```{r modules, warning=FALSE}
+if (compute) {
+  modules <- blockwiseModules(datExpr = dat_t,
+                            power = power, 
+                            networkType = "signed", 
+                            corType = "bicor",
+                            TOMType = "signed",
+                            maxPOutliers = 0.05,
+                            replaceMissingAdjacencies = TRUE,
+                            pamStage = F,
+                            deepSplit = 1,
+                            minModuleSize = 5,
+                            minKMEtoStay = 0.3,
+                            minCoreKME = 0.3, 
+                            minCoreKMESize = 2, 
+                            reassignThreshold = 0,
+                            mergeCutHeight = 0.2,
+                            maxBlockSize = 10000
+                            )
+  save(modules, file = paste0("RData/modules_", ext, ".RData"))
+  
+} else {
+  load(paste0("RData/modules_", ext, ".RData"))
+}
+
+paste0("Samples x Modules: ", paste0(dim(modules$MEs), collapse = " x "))
+
+# Number of genes per module
+mod_genes = c()
+for (i in 1:ncol(modules$MEs)) {
+  mod_genes[i] <- sum(paste("ME", modules$colors, sep = "") == colnames(modules$MEs)[i])
+}
+names(mod_genes) <- colnames(modules$MEs)
+mod_genes <- mod_genes[order(mod_genes, decreasing = TRUE)]
+xx <- barplot(mod_genes, col = gsub("ME", "", names(mod_genes)),
+     main = "Number of genes per module",
+     las = 2, cex.names = 0.65, names.arg = gsub("ME", "", names(mod_genes)))
+text(x = xx, y = mod_genes, label = mod_genes, pos = 3, cex = 0.8)
+
+# Correlation within modules
+MEs <- modules$MEs
+kME <- bicor(dat_t, MEs, maxPOutliers = 0.05)
+
+intra_cor <- c()
+for (i in 1:nrow(data)) {
+  m <- modules$colors[i]
+  if (m != "grey") {
+    intra_cor[i] <- kME[i, paste0("ME", m)]
+  }
+}
+hist(intra_cor, xlim = c(-1,1), breaks = seq(-1,1,0.1),
+     main = "Correlations with module eigengene (within module correlation)",
+     xlab = "Correlation")
+
+# Correlation between modules
+MEs_R <- bicor(MEs, MEs, maxPOutliers = 0.05)
+idx <- which(colnames(MEs_R) == "MEgrey")
+MEs_R <- MEs_R[-idx,-idx]
+hist(MEs_R[upper.tri(MEs_R)], xlim = c(-1,1), breaks = seq(-1,1,0.1),
+     main = "Correlations of module eigengenes (between module correlation)",
+     xlab = "Correlation")
+
+# Heatmap of modules
+pdf(file = "AspenCoExpression_modules_heatmap.pdf")
+hier.clust(t(MEs), samples.sep, TRUE)
+dev.off()
+
+
+# Reassign genes to modules (if used, can be stricter than the WGCNA reassignment)
+R_th <- 0.5
+if (FALSE) {
+  c <- gsub("ME", "", colnames(MEs))
+  new_color <- rep("darkgrey",length(modules$colors))
+  max_sim <- apply(kME, 1, max)
+  for (i in 1:ncol(MEs)) {
+    new_color[kME[,i] == max_sim & kME[,i] > R_th] = c[i]
+  }
+  names(new_color) <- names(modules$colors)
+  modules$colors <- new_color
+}
+
+```
+
+## Network degrees
+
+Compute network centrality (degree) measures for each gene.
+
+```{r centrality, warning=FALSE}
+
+# Compute degree
+if (compute) {
+  degrees <- intramodularConnectivity.fromExpr(dat_t, colors = modules$colors, power = power,
+                                             networkType = "signed", distFnc = "bicor")
+  save(degrees, file = paste0("RData/degrees_", ext, ".RData"))
+} else {
+  load(paste0("RData/degrees_", ext, ".RData"))
+}
+
+plot (density(degrees$kTotal[!is.na(degrees$kTotal)]), main = "Centrality/Degree: Full network (kTotal)", xlab = "Degree")
+#abline(v = 0, col = "red")
+#plot (density(degrees$kWithin[!is.na(degrees$kWithin)]), main = "Degree: Within module (kWithin)", xlab = "Degree")
+#abline(v = 0, col = "red")
+#plot (density(degrees$kDiff[!is.na(degrees$kDiff)]), main = "Degree: Within minus outside module (kDiff)", xlab = "Degree")
+#abline(v = 0, col = "red")
+```
+
+## Network
+
+A thresholded network with nodes colored according to module. NB: The code prints files that can be used to make a network in Cytoscape.
+
+```{r network, warning=FALSE, message=FALSE}
+# Draw networks
+if (compute) {
+  A <- adjacency(dat_t[,modules$colors != "grey"],
+                 type = "signed",
+                 power = power,
+                 corFnc = "bicor"
+  )
+    
+  for (col in c("all")) { # c("all", unique(modules$colors))
+  
+    if (col == "all") {
+      mod <- rownames(data)
+    } else {
+      mod <- rownames(data)[modules$colors == col]
+    }
+      
+    if (col == "all") {
+      module_network <- A
+      idx <- modules$colors != "grey"
+    } else {
+      idx <- modules$colors == col
+      module_network <- A[idx,idx]
+      rownames(module_network) <- rownames(data[idx,])
+      colnames(module_network) <- rownames(data[idx,])
+    }
+    diag(module_network) <- 0
+  
+    max_density <- (nrow(module_network)^2-nrow(module_network))/2
+    for (t in seq(0.8, 0.01, -0.01)) {
+      n_edges <- (sum(module_network > t) - nrow(module_network))/2
+      n_nodes <- sum(rowSums(module_network > t) > 0)
+      if (n_edges > max_density * 0.01) { # 1% network density
+        thr <- t
+        break
+      }
+    }
+    
+    thr = 0.8 # Hardcode threshold, in line with module detection
+  
+    hist(module_network, xlab = "Correlation", ylab = "", breaks = seq(0,1,0.05),
+       main = "Network correlation distribution", col = "red")
+    abline(v=thr)
+    cat("Number of nodes/links in network:", n_nodes, "/", as.integer(n_edges), "\n")
+    cat("Network correlation threshold:", thr, "\n")
+      
+    altnames <- rownames(module_network)
+    network <- exportNetworkToCytoscape(adjMat = module_network,
+                                        nodeFile = paste0("networks/nodes-", col, "_", ext ,".txt"), 
+                                        edgeFile = paste0("networks/edges-", col, "_", ext ,".txt"), 
+                                        threshold = thr, 
+                                        weighted = TRUE,
+                                        altNodeNames = altnames,
+                                        nodeAttr = data.frame(Module = modules$colors[idx], 
+                                                              Degree = degrees$kWithin[idx])
+                                        )
+  }
+}
+
+# ![](networks/network_1_3_2.png)
+```
+
+## Modules - Expression profiles
+
+Expression heatmaps for each module.
+
+```{r spec_modules, warning=FALSE, fig.height=10, fig.width=7}
+
+# Look at each module
+nobs <- ncol(data)
+plots <- c()
+nm <- 1
+no_mod <- length(mod_genes)-1 # Exclude grey/trash module
+for (col in names(mod_genes)) {
+  col <- gsub("ME", "", col)
+  if (col == "grey") { next }
+  
+  mod <- rownames(data)[modules$colors == col]
+  data.mod <- data[mod,]
+  
+  idx.col <- colVars(as.matrix(data.mod)) > 0
+  data.mod <- data.mod[,idx.col]
+  
+  cat("Module ", col," (", nm, "/", no_mod, "):", " | ", "Genes: ", dim(data.mod)[1], 
+      " | ", "Samples: ", dim(data.mod)[2], "\n", sep = "")
+  
+  # Hierarchical clustering of module
+  pdf(file = paste0("heatmaps/AspenCoExpression_heatmaps_", col, ".pdf"))
+  hier.clust(data.mod, samples.sep[idx.col,])
+  dev.off()
+  
+  nm <- nm+1
+}
+
+```
+
+## Modules - GO enrichment
+
+Gene Ontology enrichment analysis for each module.
+
+* N = number of expressed genes in the dataset (with annotation).
+* k = number of genes in the module (with annotation).
+* n = number of expressed genes with the function in question.
+* x = overlap between the genes in k and n.
+
+The p-value indicate to what degree x/k is larger than expected by chance (i.e. larger than n/N).
+
+```{r GO_enrichment, warning=FALSE}
+
+# Gene Ontology
+if (compute) {
+  annot <- read_delim("annotations/Potra22_blast2go_GO.txt",'\t') %>%
+    separate(`Sequence Name`,into = c("Sequence Name","Sequence Variant"), sep = "\\.") %>%
+    separate(`Annotation GO ID-Annotation GO Term`,into = c("GO ID","GO Term"), sep = "-", extra = "drop") %>%
+    filter(`Sequence Name` %in% rownames(data))
+    
+  goframeData <- data.frame(go_id=annot$`GO ID`, evidence=rep("ND", nrow(annot)), 
+                          gene_id=annot$`Sequence Name`)
+
+  goFrame=GOFrame(goframeData,organism="Aspen")
+  
+  goAllFrame=GOAllFrame(goFrame)
+  gsc <- GeneSetCollection(goAllFrame, setType = GOCollection())
+  
+  GO_modules <- list()
+  for (col in unique(modules$colors)) {
+      mod <- rownames(data)[modules$colors == col]
+      idx <- match(mod,goframeData$gene_id)
+      mod <- mod[!is.na(idx)]
+      
+      if (length(mod) > 0) {
+        params <- GSEAGOHyperGParams(name="My Custom GSEA based annot Params",
+                                 geneSetCollection=gsc,
+                                 geneIds = mod,
+                                 universeGeneIds = goframeData$gene_id,
+                                 ontology = "BP",
+                                 pvalueCutoff = 0.05,
+                                 conditional = FALSE,
+                                 testDirection = "over")
+  
+        Over <- hyperGTest(params)
+        t <- summary(Over)
+        t <- t[t$Count>1,]
+        t <- t[,c(1,2,5,6,7)]
+        colnames(t) <- c("GO id","P-value","x","n","GO term")
+        if (nrow(t) > 0) {
+          rownames(t) <- 1:nrow(t)
+        
+          t$`P-value`<- format(t$`P-value`, digits=3, scientific=TRUE)
+        }
+        GO_modules[[col]] <- t
+        print(col)
+      } else {
+        t <- data.frame('GO id' = c(""), 'P-value' = c(""), 
+                        x = c(""), n = c(""), 'GO term' = c(""))
+        GO_modules[[col]] <- t
+      }
+  }
+  
+  save(GO_modules, file = paste0("RData/GO_modules_", ext, ".RData"))
+} else {
+  load(paste0("RData/GO_modules_", ext, ".RData"))
+}
+
+out = NULL
+nm <- 1
+for (col in names(mod_genes)) {
+  col <- gsub("ME", "", col)
+  if (col == "grey") { next }
+  
+  mod <- rownames(data)[modules$colors == col]
+  
+  title <- paste0("Module ", col," (", nm, "/", no_mod, "): ", length(mod), " genes")
+  
+  knit_expanded <- paste0("\n\n", title, "\n\n```{r results='asis', echo=FALSE}\n\n\n\ndatatable(GO_modules[['", col, "']],rownames = FALSE, filter = 'top', options = list(columnDefs = list(list(className = 'dt-center', targets = '_all'))))\n\n```")
+  
+  out = c(out, knit_expanded)
+  nm <- nm + 1
+}
+
+```
+
+`r paste(knit(text = out), collapse = '\n')`
+
+## Modules - Genes information
+
+A table with information about the genes in the network including module membership and network centrality.
+
+By default, the table is sorted on centrality, with genes of interest (GOIs) first and then all other genes.
+
+```{r gene_info, warning=FALSE, message=FALSE}
+
+if (compute) {
+  
+  annot <- read_delim("annotations/gene_info.txt",delim= "\t") %>%
+    mutate(description = gsub("^sp\\S+\\s","", description)) %>%
+    mutate(description = gsub("\\s\\S+=.+$","", description))
+  #annot <- read_delim("annotations/Potra22_blast2go_GO_export.txt")
+  
+  subannot <- left_join(data.frame('Gene name' = rownames(data), check.names = FALSE),
+                        annot[,c(1,3)], by = c("Gene name"="gene_id"))
+  
+  atg <- read.table("annotations/potra_artha_BEST_DIAMOND_out.tsv")
+  symbols <- read.delim("annotations/gene_aliases_20140331.txt", sep = "\t")
+  
+  atg <- left_join(atg, symbols, by = c("V2"="locus_name"))
+  
+  subannot <- left_join(subannot, atg, by = c("Gene name"="V1")) %>%
+    dplyr::rename(Description=description, ATG=V2, `ATG symbol`=symbol, 
+                  `ATG full name`=full_name) %>%
+    group_by(`Gene name`) %>%
+    summarise(Description = Description[1],
+              ATG = paste0(unique(ATG), collapse = ";"),
+              `ATG symbol` = paste0(unique(`ATG symbol`), collapse = ";"),
+              `ATG full name` = paste0(unique(`ATG full name`), collapse = ";"))
+  
+  subannot$ATG <- gsub("NA", NA, subannot$ATG)
+  subannot$`ATG symbol` <- gsub("NA", NA, subannot$`ATG symbol`)
+  subannot$`ATG full name` <- gsub("NA", NA, subannot$`ATG full name`)
+  
+  cat("Potra genes with Arab symbol:", sum(!is.na(subannot$`ATG symbol`)), "\n")
+  
+  goi <-   read.table("data/GOI2.txt", sep = "\t") %>%
+    dplyr::select(V1, V3) %>%
+    dplyr::rename(GOI=V1, `Gene name` = V3)
+  
+  subannot <- subannot %>%
+    left_join(goi, by = "Gene name")
+  
+  # Add TFPlantDB annotations
+  tfs <- read.table("annotations/potra_PlantTFcat.txt", header = TRUE, skip = 1, sep = "\t") %>%
+    separate(`Sequence_Acc`, into = c("Sequence Name","Sequence Variant"), sep = "\\.") %>%
+    dplyr::select(`Sequence Name`, Family) %>%
+    dplyr::rename(`Gene name` = `Sequence Name`) %>%
+    group_by(`Gene name`) %>% dplyr::slice(1)
+  
+  subannot <- subannot %>%
+    left_join(tfs, by = "Gene name")
+  
+  # Add network centrality
+  subannot$Centrality <- round(degrees$kTotal)
+  subannot$Module <- modules$colors
+  
+  # Add module number to make it easier to search
+  subannot$Module <- paste0(subannot$Module, "/", as.integer(factor(subannot$Module, levels = gsub("ME", "", names(mod_genes))))-1)
+
+  save(subannot, file = paste0("RData/genetable_", ext, ".RData"))
+} else {
+  load(paste0("RData/genetable_", ext, ".RData"))
+}
+
+# Remove trash module
+# subannot <- subannot[subannot$Module != "grey/0",]
+
+subannot <- subannot %>%
+  arrange(is.na(GOI), desc(Centrality))
+
+datatable(subannot, rownames = FALSE, filter = "top",
+          options = list(
+            columnDefs = list(list(className = 'dt-center', targets = "_all"))
+            )
+          )
+```
+
