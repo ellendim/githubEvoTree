@@ -1,0 +1,27 @@
+{
+    "id": "28EDC00B",
+    "path": "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/GENE_LIST_main_ver1.Rmd",
+    "project_path": "GENE_LIST_main_ver1.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1702902977390.0,
+    "source_on_save": false,
+    "relative_order": 3,
+    "properties": {
+        "chunk_output_type": "console",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "162,0",
+        "scrollLine": "135"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1702041078,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1702041078,
+    "read_only": false,
+    "read_only_alternatives": []
+}
