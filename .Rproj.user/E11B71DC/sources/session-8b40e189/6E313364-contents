@@ -1,0 +1,307 @@
+---
+title: "GO enrichment"
+author: "Ellen Dimmen Chapple"
+date: '`r format(Sys.time(), "%d.%m.%Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(cowplot)
+
+```
+
+
+
+
+- NAC genes, vnd
+- more functional info in arabidopsis
+- use plantgenie
+
+- relax definitions of conserved
+- 
+
+- visualisation of conserved genes ex. vnd or something
+
+
+
+# Expression profiles
+
+Flow: 
+1) Find a GO term of interest - filter the go_list to only contain genes with this term
+2) Filter the ortholog group file to only contain annotated genes for the specific GO term and that only occur in the gene set we are studying (ex. ultra-conserved genes). Fill in which gene set is to be used!
+
+```{r}
+
+
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+conserved_genes <- read_delim("Data/DATA/textFiles/cons_genes_aspen.txt", "\t")
+
+load("go_list.RData")
+
+goterm_to_genes <- go_list %>% 
+  filter(`GO ID` == "GO:0009987") %>% 
+  distinct(`Sequence Name`, .keep_all = T)
+
+ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t")
+
+genes_to_all_genes <- ortholog_group_file %>%  
+  mutate(Pinsyl.SHORT.cp.pep = Pinsyl.SHORT.pep) %>% 
+    rename(
+    Asp = Poptre.SHORT.pep,
+    Birch = Betpen.SHORT.pep,
+    Nor = Picabi.SHORT.pep,
+    Scots = Pinsyl.SHORT.pep,
+    Cher = Prunavi.SHORT.pep,
+    Lodge = Pinsyl.SHORT.cp.pep,
+    OrthoGroup = Orthogroup) %>%   
+  separate_rows(Asp, sep = ", ") %>% 
+  mutate(Asp = gsub("Poptre_", "", Asp)) %>%
+  mutate(Asp = gsub("\\.\\d\\.p\\d$", "", Asp)) %>% 
+  filter(Asp %in% goterm_to_genes$`Sequence Name`) %>% 
+  filter(Asp %in% conserved_genes$Asp) %>%   
+  select(OrthoGroup, species_list) %>% 
+  distinct(Asp, .keep_all = T)
+
+
+```
+
+
+2) If there are multiple genes for a GO term (in Aspen), compare the genes by studying both their expression profiles and all other associated GO terms.
+
+
+```{r}
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/",i,"Wood_transcriptomics.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+    
+}
+
+# Filter genes to only contain the genes associated with the GO-term.
+expression_vector_asp <- read_delim(file_list_2[2]) %>% 
+  filter(Genes %in% genes_to_all_genes$Asp) %>% 
+  select(Genes, contains("1.")) %>% 
+  t()
+
+colnames(expression_vector_asp) <- expression_vector_asp[1,]
+expression_vector_asp <- expression_vector_asp[-1,] %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "Samples")
+
+longer_expr <- expression_vector_asp %>% 
+  pivot_longer(c(-1),names_to = "Genes", values_to = "Expression") %>% 
+  mutate_at("Expression", as.numeric) %>% 
+  mutate(Samples = gsub("A1.", "", Samples)) %>% 
+  group_by(Genes) 
+
+
+
+plot_asp <- ggplot(data = longer_expr, aes(x = Samples, y = Expression, col = Genes, group = Genes)) +
+      geom_line(linewidth = 2) +
+      ggtitle("") + ylab("Expression")
+
+plot_asp
+
+
+
+```
+
+
+ 
+```{r fig.dim = c(15, 15)}
+
+# Does the same as above, but gives a separate plot for each gene.
+
+genes_to_plot <- c(unique(longer_expr$Genes))
+plots <- list()
+
+for(i in 1:length(genes_to_plot)){
+  gene <- genes_to_plot[i]
+  df <- longer_expr %>% 
+    filter(Genes == gene)
+  
+  plots[[length(plots)+1]]  <- ggplot(data = df, aes(x = Samples, y = Expression, group = Genes)) +
+    geom_line(linewidth = 2) +
+    ggtitle(gene) + ylab("Expression (VST)")
+  
+  
+  
+}
+
+plot_grid(plotlist = plots, ncol = 2)
+
+```
+
+
+
+**Comments**
+
+Most genes share a similar curve where there is a peak around sample 12. These genes are not orthologs, but all share one GO. Before choosing one of these (and then going with this ortholog group), take a look at each gene in PlantGenie to see what other GOs the gene has.
+
+
+According to PlantGenie, the following genes actually contain the GO:
+ 
+ "Potra2n14c26547" 
+ "Potra2n5c11175"  
+ "Potra2n5c12319"  
+ "Potra2n7c15752" **
+
+ 
+```{r fig.dim = c(15, 15)}
+
+genes_to_plot_filtered <- c( "Potra2n14c26547",  "Potra2n5c11175",  "Potra2n5c12319" ,  "Potra2n7c15752")
+plots <- list()
+
+for(i in 1:length(genes_to_plot_filtered)){
+  gene <- genes_to_plot_filtered[i]
+  df <- longer_expr %>% 
+    filter(Genes == gene)
+  
+  plots[[length(plots)+1]]  <- ggplot(data = df, aes(x = Samples, y = Expression, group = Genes)) +
+    geom_line(linewidth = 2) +
+    ggtitle(gene) + ylab("Expression ")
+  
+  
+  
+}
+
+plot_grid(plotlist = plots, ncol = 2)
+
+```
+
+ 
+- Test out the orthologs for: "Potra2n5c12319"
+
+
+3) When a gene of interest has been identified, we filter the data set to only contain genes within this ortholog group. Remember to use all of the available aspen genes.
+
+```{r}
+
+aspGene_to_OG <- genes_to_all_genes %>%  
+  filter(Asp == "Potra2n5c12319")
+
+
+OG_to_genes <- aspGene_to_OG %>% 
+  separate_rows(Birch, sep = ", ") %>%
+  separate_rows(Cher, sep = ", ") %>% 
+  separate_rows(Nor, sep = ", ") %>% 
+  separate_rows(Lodge, sep = ", ") %>% 
+  separate_rows(Scots, sep = ", ") 
+
+
+
+for(i in 2:ncol(OG_to_genes)){
+  col <- colnames(OG_to_genes[i])
+  
+  cat("Species: ", col, "\n")
+  cat("Number of unique genes: ",nrow(unique(OG_to_genes[,i])), "\n")
+  cat("Genes: ", "\n")
+  print(unique(OG_to_genes[i]))
+  cat("\n")
+  cat("\n")
+}
+
+
+
+
+```
+
+
+For the selected Aspen-gene there are 2-3 orthologs within the other species. 
+
+2) Find the orthologs to this gene.
+OBS! There will be multiple orthologs, so plot them all.
+
+ 
+```{r fig.dim=, message=FALSE, warning=FALSE}
+
+genes_to_plot_all <- OG_to_genes %>%
+  mutate(Birch = gsub("Betpen_", "", Birch)) %>%
+  mutate(Cher = gsub("Prunavi_", "", Cher)) %>%
+  mutate(Nor = gsub("\\.p\\d$", "", Nor)) %>%
+  mutate(Cher = gsub("\\.p\\d$", "", Cher)) %>% 
+  slice(1)
+
+
+expression_all_longer <- data.frame() 
+
+
+for(i in 1:length(file_list_2)){
+  
+  species <- colnames(genes_to_plot_all[i+1])
+  ortholog <- c(as.character(genes_to_plot_all[1, i+1]))
+  
+  
+  expression_vector <- read_delim(file_list_2[i], show_col_types = FALSE)  %>% 
+    select(Genes, contains("1."))
+  
+  samples <- colnames(expression_vector)[-1]
+  
+  expression_vector_t <- t(expression_vector) 
+  
+  colnames(expression_vector_t) <- expression_vector_t[1,]
+  expression_vector_t <- expression_vector_t[-1,] %>% 
+    as.data.frame() %>% 
+    mutate(Samples = samples) %>% 
+    select(Samples, ortholog)
+  
+  
+  longer <- expression_vector_t%>% 
+    pivot_longer(c(-1),names_to = "Genes", values_to = "Expression") %>% 
+    mutate_at("Expression", as.numeric) %>% 
+    mutate(Samples = gsub("^(.+?).", "", Samples)) %>% 
+    mutate(Species = rep(species, length(samples)))
+  
+
+  
+  expression_all_longer <- rbind(expression_all_longer,longer)
+  
+  
+}
+
+expression_all_longer <- expression_all_longer %>% 
+  group_by(Genes)
+
+plots <- list()
+for(i in 1:length(unique(expression_all_longer$Species))){
+  
+  species <- unique(expression_all_longer$Species)[i]
+  
+  
+  df <- expression_all_longer %>% 
+    filter(Species == species)
+  
+  gene <- unique(df$Genes)
+  
+  sub_title <- paste0(species, ": ", gene)
+  
+  plots[[length(plots)+1]]  <- ggplot(data = df, aes(x = Samples, y = Expression, group = Genes)) +
+    geom_line(linewidth = 2) +
+    ggtitle(sub_title) + ylab("Expression (VST)")
+  
+  
+  
+}
+
+
+plot_grid(plotlist = plots, ncol = 2)
+
+```
+
+
+

@@ -1,0 +1,261 @@
+---
+title: "Heatmaps - conserved genes"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ComplexHeatmap)
+library(gplots)
+library(cowplot)
+library(circlize)
+
+```
+
+1. Read the expression-file
+2. Read in file for the conserved genes - cons_genes_all_species.
+3. Filter out genes in expression files that are not conserved. 
+ -> Can either filter out the 
+5. For the heatmaps: cluster the genes, while keeping the samples in the same order. Plot.
+
+## Test run for only Aspen
+
+1) Load files
+
+```{r}
+
+asp_expr <- read_delim("Data/DATA/transcriptomicsData/AspWood_transcriptomics.txt")
+gene_set <- read_delim("Data/DATA/textFiles/cons_genes_gymnosperms.txt") # change this based on which set that is to be used
+comp <-read_delim("Data/DATA/textFiles/cons_genes_angiosperms.txt")
+
+species_list <- c( "Scots","Nor", "Lodge") # change this based on which set that is to be used
+
+ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t") %>% 
+  mutate(Pinsyl.SHORT.cp.pep = Pinsyl.SHORT.pep) %>% 
+  rename(
+    Asp = Poptre.SHORT.pep,
+    Birch = Betpen.SHORT.pep,
+    Nor = Picabi.SHORT.pep,
+    Scots = Pinsyl.SHORT.pep,
+    Cher = Prunavi.SHORT.pep,
+    Lodge = Pinsyl.SHORT.cp.pep,
+    OrthoGroup = Orthogroup) %>% 
+  mutate(Asp = gsub("Poptre_", "", Asp)) %>%
+  mutate(Asp = gsub("\\.\\d\\.p\\d$", "", Asp)) %>% 
+  mutate(Birch = gsub("Betpen_", "", Birch)) %>%
+  mutate(Cher = gsub("Prunavi_", "", Cher)) %>%
+  mutate(Nor = gsub("\\.p\\d$", "", Nor)) %>%
+  mutate(Cher = gsub("\\.p\\d$", "", Cher))
+
+
+```
+
+2) Filter the ortholog_group_file so that we only retain conserved ortholog groups (conserved = 261 groups)
+3) Then extract the genes for the selected species (separating rows and applying gsub to fix the gene names if necessary)
+
+```{r eval=FALSE, include=FALSE}
+
+conserved_ortholog_groups <- ortholog_group_file %>% 
+  filter(OrthoGroup %in% gene_set$OrthologGroup) %>% 
+  select(Asp) %>% 
+  separate_rows(Asp, sep = ", ")
+
+# Number of genes that are expressed and conserved for a species will vary depending on the number of genes a species has per ortholog group.
+expressed_and_conserved_genes <- asp_expr %>% 
+  filter(Genes %in% conserved_ortholog_groups$Asp) %>% 
+  column_to_rownames("Genes") %>% 
+  select(contains("1.")) %>% 
+  as.matrix()
+
+
+```
+
+
+4) Create a distance matrix
+5) Plot the heatmap keeping the samples in the original order and clustering the genes after scaling.
+
+**Using ComplexHeatmap**
+
+```{r fig.dim = c(10,15), eval=FALSE, include=FALSE}
+
+distance_matrix <- dist(expressed_and_conserved_genes, method = "euclidean")
+scaled_data <- t(scale(t(expressed_and_conserved_genes), center = T, scale = T))
+hm <-  Heatmap(scaled_data ,show_column_names = FALSE, 
+               cluster_rows = TRUE,
+               clustering_distance_rows = "euclidean",
+               clustering_method_rows = "ward.D2",
+               show_row_names = FALSE,
+               width = ncol(expressed_and_conserved_genes)*unit(5, "mm"),
+               height = nrow(expressed_and_conserved_genes)*unit(1, "mm"),
+               
+    column_order = 1:ncol(expressed_and_conserved_genes)) 
+
+hm
+
+```
+
+**Using gplots (heatmap.2)**
+
+```{r fig.dim = c(10,10),eval=FALSE, include=FALSE}
+
+scaled_data <- t(scale(t(expressed_and_conserved_genes), center = T, scale = T))
+
+distance_matrix_scaled <- dist(scaled_data, method = "euclidean")
+
+hclust_genes <- hclust(distance_matrix_scaled, method = "ward.D")
+dend_genes <- as.dendrogram(hclust_genes) 
+
+
+heat_2 <- heatmap.2(as.matrix(scaled_data), 
+                Colv = FALSE, 
+                Rowv = dend_genes, 
+                dendrogram = "row",
+                scale = "none",
+                trace = "none",
+                col = colorRampPalette(c("blue","white","red")),
+                cexCol = 0.8,
+                srtCol = 45,
+                labRow = rep("", nrow(scaled_data)), 
+                margins = c(4,3),
+                main = "Aspen - expression of conserved genes"
+          )
+
+
+
+```
+
+
+## Creating loop for all species
+
+- using all species in the species_list for conserved genes, but only gymnosperms/angiosperms for the clade-specific
+- the file with genes that are to be plotted (conserved or clade-specific) is read in above
+
+```{r message=FALSE, warning=FALSE}
+
+
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/",i,"Wood_transcriptomics.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+  
+}
+
+col_function_1 <- colorRamp2(c(-3, 0 ,3), c("#0571b0", "#f7f7f7","#ca0020" ))
+lgd_1 = Legend(col_fun = col_function_1, title = "Z-value?", title_gp = gpar(fontsize = 20) , legend_height = unit(12, "cm"), grid_width = unit(1, "cm"), labels_gp = gpar(fontsize = 20),at = c(-3, 0 ,3), title_gap =  unit(0.5, "cm"))
+
+for (i in 1:length(file_list_2)){
+  
+  x <- read_delim(file_list_2[i], show_col_types = FALSE)
+  
+  species <- sapply(strsplit(file_list_2[i], "transcriptomicsData/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[", 1)
+  
+  conserved_ortholog_groups <- ortholog_group_file %>% 
+    filter(OrthoGroup %in% gene_set$OrthologGroup) %>% 
+    rename(Species = species) %>% 
+    select(Species) %>% 
+    separate_rows(Species, sep = ", ")
+  
+  # Number of genes that are expressed and conserved for a species will vary depending on the number of genes a species has per ortholog group.
+  expressed_and_conserved_genes <- x %>% 
+    filter(Genes %in% conserved_ortholog_groups$Species) %>% 
+    column_to_rownames("Genes") %>% 
+    select(contains("1.")) %>% 
+    as.matrix()
+  
+  print(cat(species, ": ", nrow(expressed_and_conserved_genes), " genes."))
+  distance_matrix <- dist(expressed_and_conserved_genes, method = "euclidean")
+  
+  scaled_data <- t(scale(t(expressed_and_conserved_genes), center = T, scale = T)) 
+  
+
+  scaled_data[is.nan(scaled_data)] <-0 #Lodge had a few rows with NaNs which became an issue when running Lodge on the clade-specific genes.
+  
+  hm <-  Heatmap(scaled_data ,show_column_names = TRUE, 
+                 cluster_rows = TRUE,
+                 show_row_dend = FALSE,
+                 column_title = species,
+                 column_title_gp = gpar(fontsize = 40),
+                 clustering_distance_rows = "euclidean",
+                 clustering_method_rows = "ward.D2",
+                 show_row_names = FALSE,
+                 width = ncol(expressed_and_conserved_genes)*unit(5, "mm"),
+                 height = nrow(expressed_and_conserved_genes)*unit(1, "mm"),
+                 column_order = 1:ncol(expressed_and_conserved_genes),show_heatmap_legend = F,col = col_function_1) 
+  
+  
+    
+    
+  new_name <- as.character(paste0("hm_",species))
+  gdata::mv("hm", new_name) 
+
+}
+
+
+
+```
+
+
+
+
+
+```{r}
+lgd_1_grob <- grid.grabExpr(draw(lgd_1))
+# g1 <- grid.grabExpr(print(`hm_Asp`))
+# g2 <- grid.grabExpr(print(`hm_Cher`)) 
+# g3 <- grid.grabExpr(print(`hm_Birch`))
+g4 <- grid.grabExpr(print(`hm_Nor`))
+g5 <- grid.grabExpr(print(`hm_Scots`))
+g6 <- grid.grabExpr(print(`hm_Lodge`))
+
+
+```
+
+```{r fig.dim = c(40,20)}
+# 
+# grid_plot_conserved <-plot_grid(g1,g4,g2,g3,g6,g5,lgd_1_grob, nrow = 1, ncol = 7, rel_widths = c(1,1,1,1,1,1, 1), rel_heights = c(0.5, 0.5, 0.5, 1,1,1,1) ,axis = "b")
+# grid_plot_conserved
+
+
+# 
+# grid_plot_angiosperms <-plot_grid(g1,g2, g3, lgd_1_grob, nrow = 1, ncol = 4)
+# grid_plot_angiosperms
+
+```
+
+
+
+
+```{r fig.dim = c(40,20)}
+# 
+# grid_plot_conserved <-plot_grid(g1,g4,g2,g3,g6,g5,lgd_1_grob, nrow = 1, ncol = 7, rel_widths = c(1,1,1,1,1,1, 1), rel_heights = c(0.5, 0.5, 0.5, 1,1,1,1) ,axis = "b")
+# grid_plot_conserved
+
+
+
+grid_plot_gymnosperms <-plot_grid(g4,g5, g6, lgd_1_grob, nrow = 1, ncol = 4)
+grid_plot_gymnosperms
+
+```
+
+
+
+
+
+
+
+
+
+

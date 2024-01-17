@@ -1,0 +1,126 @@
+
+
+library(tidyverse)
+library(igraph)
+
+# Read in expressologs
+expressologs <- read_table("all_co-expressed_genes.txt") %>% 
+  mutate(SpeciesPair = paste0(Species1, Species2))
+
+# Set p-value threshold
+p_thr <- 0.2
+
+# Identify conservation orthogroups - all 15 species comparisons: utraconserved
+speciesPairs <- tibble(SpeciesPair = expressologs %>% distinct(SpeciesPair) %>% pull(SpeciesPair),
+                       SpeciesPairClade = c("Angio", "Angio", "Cross", "Cross", "Angio", "Cross", "Cross", "Cross", 
+                       "Gymno", "Gymno", "Cross", "Cross", "Gymno", "Cross", "Cross"))
+
+expressologs <- left_join(expressologs, speciesPairs, by = "SpeciesPair")
+
+expressologs <- expressologs %>% 
+  group_by(OrthologGroup, SpeciesPair) %>% 
+  arrange(MaxPVal) %>%
+  filter(MaxPVal < p_thr) %>% 
+  slice(1) %>%
+  group_by(OrthologGroup) %>%
+  mutate(Conserved = n()) %>%
+  arrange(desc(Conserved)) %>% 
+  group_by(OrthologGroup, SpeciesPairClade) %>%
+  mutate(ConservedClade = n()) %>% 
+  ungroup()
+
+cat("Orthogroups with at least one expressolog:", expressologs %>% distinct(OrthologGroup) %>% nrow(), "\n")
+
+expressologs %>% 
+  group_by(OrthologGroup) %>%
+  distinct(SpeciesPair) %>% 
+  filter(n() == 15) %>% 
+  distinct(OrthologGroup) %>% 
+  pull(OrthologGroup) -> ultraConservedOrthoGroups
+
+cat("Orthogroups ultra-conserved across both clades:", length(ultraConservedOrthoGroups), "\n")
+
+# Identify ultraconserved orthogroups with one gene in each species: ultraultraconserved
+# Make a network of pairwise expressologs and then look for cliques 
+ultraultraConservedOrthoGroups <- c()
+for (g in ultraConservedOrthoGroups) {
+  
+  expressologs_g <- expressologs %>% 
+    filter(OrthologGroup == g) %>%
+    mutate(UGeneSpecies1 = paste0(expressologs_g$Species1, "-", expressologs_g$GeneSpecies1),
+           UGeneSpecies2 = paste0(expressologs_g$Species2, "-", expressologs_g$GeneSpecies2))
+  
+  nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+  
+  edges <- data.frame(from = expressologs_g$UGeneSpecies1, 
+                      to = expressologs_g$UGeneSpecies2)
+  
+  net <- graph_from_data_frame(edges, directed = FALSE, vertices = nodes)
+    
+  clique <- largest_cliques(net)[[1]] # OBS: Just take one of them!
+  clique <- attr(clique, "names")
+  
+  clique_species <- unique(sapply(str_split(clique, "-"), function(x) { x[1]}))
+  
+  if (length(clique_species) == 6) {
+    ultraultraConservedOrthoGroups <- c(ultraultraConservedOrthoGroups, g)
+  }
+}
+
+########################
+# Some plotting of expression profiles
+# Plot all genes in the orthogroup: should plot only those in the clique
+########################
+
+species_names <- c("AspWood", "BirchWood", "CherWood", "NorWood", "ScotsWood", "LodgeWood")
+species_names_short <- gsub("Wood", "", species_names)
+tree_names <- c("A1", "B1", "C1", "S1", "T1", "L1")
+
+orthoGroups <- ultraultraConservedOrthoGroups
+
+expressologs %>% 
+  filter(OrthologGroup %in% orthoGroups) -> expressologs_focus
+genes <- unique(c(expressologs_focus$GeneSpecies1, expressologs_focus$GeneSpecies2))
+
+expr <- data.frame()
+for (species in species_names) {
+  
+  species_short <- gsub("Wood", "", species)
+  tree <- tree_names[which(species == species_names)]
+  
+  species_expr_file <- paste0("../", species, "/", species, "_transcriptomics.txt")
+  species_expr <- read.delim(species_expr_file, sep = "\t", header = TRUE) %>% 
+    filter(Genes %in% genes) %>% 
+    gather (Sample.names, Expression, -1) %>%
+    separate(Sample.names, into = c("Trees", "Samples"), sep = "\\.", remove = FALSE) %>%
+    mutate_at("Samples", as.numeric) %>%
+    filter(Trees == tree) %>% 
+    mutate(Species = c(species_short))
+  
+  expr <- rbind(expr, species_expr)
+  
+}
+
+library(cowplot)
+
+plots <- list()
+for (i in 1:5) {
+  
+  expressologs %>% 
+    filter(OrthologGroup %in% ultraultraConservedOrthoGroups[i]) -> expressologs_focusgroup
+  orthoGroupGenes <- unique(c(expressologs_focusgroup$GeneSpecies1, expressologs_focusgroup$GeneSpecies2))
+  
+  plots[[length(plots)+1]] <- expr %>%
+    filter(Genes %in% orthoGroupGenes) %>%
+    ggplot(aes(x = Samples, y = Expression, col = Genes)) +
+    geom_line(size = 2) +
+    ylab("Expression (VST)") +
+    theme_classic() +
+    theme(legend.position = "none") +
+    facet_grid(cols = vars(Species)) +
+    ggtitle(label = ultraultraConservedOrthoGroups[i])
+  
+}
+
+plot_grid(plotlist = plots, ncol = 1)
+

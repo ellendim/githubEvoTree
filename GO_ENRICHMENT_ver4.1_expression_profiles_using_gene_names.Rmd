@@ -1,0 +1,289 @@
+---
+title: "GO enrichment"
+author: "Ellen Dimmen Chapple"
+date: '`r format(Sys.time(), "%d.%m.%Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(cowplot)
+
+```
+
+
+
+
+# Expression profiles
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+# ---------------------------------------------------------------
+# ORTHOLOG GROUPS
+ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t") %>% mutate(Pinsyl.SHORT.cp.pep = Pinsyl.SHORT.pep) %>% 
+  rename(
+    Asp = Poptre.SHORT.pep,
+    Birch = Betpen.SHORT.pep,
+    Nor = Picabi.SHORT.pep,
+    Scots = Pinsyl.SHORT.pep,
+    Cher = Prunavi.SHORT.pep,
+    Lodge = Pinsyl.SHORT.cp.pep,
+    Tri = Poptri.SHORT.pep,
+    OrthoGroup = Orthogroup) %>%   
+  separate_rows(Tri, sep = ", ") %>% 
+  mutate(Tri = gsub("Poptri_", "", Tri)) %>% 
+  mutate(Tri = gsub("\\|.*", "", Tri)) %>% 
+  mutate(Tri = gsub("\\.\\d$", "", Tri))  
+
+# SUMMARY TABLE FROM GSEA
+load("summary_table_cons_0.05.RData")
+summary_table <- summary_table_cons_0.05 # Rename for conveniance 
+
+
+# CONSERVED AND CO-EXPRESSED GENES - p-value cutoff at 0.05
+# Create 2 separate columns of only aspen genes, then put them together to create one long column. Then remove the duplicated genes.
+conserved_genes <- read.delim("Data/DATA/textFiles/partial3_genes_angiosperms.txt", header = TRUE, sep = " ") %>% 
+  filter(MaxPVal < 0.05)
+
+# %>% 
+#   filter(MaxpVal < 0.1)
+
+# ANNOTATION FILE
+load("go_list.RData")
+
+
+# SUMMARY FILE WITH GO TERMS WITH ANNOTATED GENES
+load("Data/DATA/actual_GO_terms.R")
+
+
+
+```
+
+
+
+```{r}
+
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+
+file_list_2 <- c()
+for (i in species_list){
+
+  expr_name <- paste0("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/",i,"Wood_transcriptomics_hm.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+
+}
+
+
+```
+
+
+
+"Potri.004G081300", "Potri.016G142800", "Potri.001G240900", "Potri.004G059600", "Potri.011G044500" - mapped to the triocarpa
+
+("SUS6", "CDC2", "EXPA1", "CesA8", "BFN1") P. trichocarpa
+
+
+
+
+```{r}
+
+poptri_genes <- c("Potri.016G142800" ,"Potri.004G059600","Potri.004G081300", "Potri.001G240900", "Potri.011G044500" )
+# "Potri.004G081300", "Potri.001G240900", "Potri.011G044500" 
+
+# OGs_from_jan23 <- c("OG0000548", "OG0002721", "OG0005186", "OG0009733" ,"OG0036093")
+# OG groups in 100323:  "OG0000009" "OG0000129" "OG0001424" "OG0001555" "OG0001699"
+
+
+  
+```
+
+
+```{r}
+
+
+
+# Start by renaming columns, and separating the rows for Tri so we can filter for the genes we are searching for.
+genes_to_all_genes <- ortholog_group_file %>%  
+  filter(Tri %in% poptri_genes) %>%
+  select(OrthoGroup, Tri ,all_of(species_list))
+
+length(unique(genes_to_all_genes$Tri))
+  
+# Then we only want the genes that are co-expressed 
+
+genes_to_all_genes <- genes_to_all_genes %>% 
+  separate_rows(Birch, sep = ", ") %>%
+  separate_rows(Cher, sep = ", ") %>% 
+  separate_rows(Nor, sep = ", ") %>% 
+  separate_rows(Lodge, sep = ", ") %>% 
+  separate_rows(Scots, sep = ", ") %>% 
+  separate_rows(Asp, sep = ", ")%>% 
+  mutate(Birch = gsub("Betpen_", "", Birch)) %>%
+  mutate(Cher = gsub("Prunavi_", "", Cher)) %>%
+  mutate(Nor = gsub("\\.p\\d$", "", Nor)) %>%
+  mutate(Cher = gsub("\\.p\\d$", "", Cher)) %>% 
+  mutate(Asp = gsub("Poptre_", "", Asp)) %>%
+  mutate(Asp = gsub("\\.\\d\\.p\\d$", "", Asp))
+
+
+
+all_co_ex_genes <- conserved_genes %>% 
+  select(GeneSpecies1, GeneSpecies2)
+
+gene_vector <- data.frame(genes = unlist(all_co_ex_genes, use.names = FALSE))
+
+gene_vector <- gene_vector %>% 
+  distinct(genes, .keep_all = T)
+
+OG_to_genes <- genes_to_all_genes %>%
+  filter(Scots %in% gene_vector$genes) 
+
+unique(OG_to_genes$OrthoGroup)
+
+OG_to_genes <- genes_to_all_genes %>%
+  filter(Nor %in% gene_vector$genes)
+
+length(unique(OG_to_genes$OrthoGroup))
+
+OG_to_genes <- genes_to_all_genes %>%
+  filter(Lodge %in% gene_vector$genes)
+
+length(unique(OG_to_genes$OrthoGroup))
+
+OG_to_genes <- genes_to_all_genes %>% 
+    filter(Asp %in% gene_vector$genes) 
+
+length(unique(OG_to_genes$OrthoGroup))
+
+OG_to_genes <- genes_to_all_genes%>%
+  filter(Cher %in% gene_vector$genes) 
+
+length(unique(OG_to_genes$OrthoGroup))
+
+OG_to_genes <- genes_to_all_genes %>%
+  filter(Birch %in% gene_vector$genes) 
+
+length(unique(OG_to_genes$OrthoGroup))
+
+
+
+
+```
+
+
+```{r fig.dim = c(15,15)}
+
+unique_genes_tri<-c(unique(genes_to_all_genes$Tri))
+
+
+for(i in 1:length(unique_genes_tri)){
+  
+  # We want a plot of 6 figures per gene
+  expression_all_longer <- data.frame() 
+  plots <- list()
+  
+  # For all species
+  for(x in 1:length(file_list_2)){
+    # x <- 1
+    # i <- 7
+    
+    species <- sapply(strsplit(file_list_2[x], "transcriptomicsData/transcriptomicsForHeatmaps/"), "[",2)
+    species <- sapply(strsplit(species, "Wood"), "[", 1)  
+    tri <- unique_genes_tri[i]
+    
+    # tri_gene <- OG_to_genes %>% 
+    #   filter(Tri == tri) 
+    # 
+    # tri_gene_v <- c(tri_gene)[[1]][1]
+    #   
+    filtering_vector <- genes_to_all_genes %>%
+      filter(Tri == tri) %>%
+      rename(Species = species) %>% 
+      filter(Species %in% gene_vector$genes)
+    
+    
+    expression_vector <- read_delim(file_list_2[x], show_col_types = FALSE)  %>% 
+      select(Genes, contains("1.")) %>% 
+      filter(Genes %in% filtering_vector$Species)
+    
+    if(nrow(expression_vector) > 0){
+          samples <- colnames(expression_vector)[-1]
+    expression_vector_t <- t(expression_vector) 
+    colnames(expression_vector_t) <- expression_vector_t[1,]
+    
+    expression_vector_t <- expression_vector_t[-1, ,drop = F] %>% 
+      as.data.frame() %>%
+      mutate(Samples = samples) 
+    
+    
+    longer <- expression_vector_t %>% 
+      pivot_longer(-Samples,names_to = "Genes", values_to = "Expression") %>% 
+      mutate_at("Expression", as.numeric) %>% 
+      mutate(Samples = gsub("^(.+?).", "", Samples)) 
+    
+    longer_end <- longer %>% 
+      mutate(Species = rep(species, nrow(longer)))
+    
+    expression_all_longer <- rbind(expression_all_longer,longer_end)
+    } else{
+      print(paste0("No ortholog of: ", tri, " for ", species))
+    }
+    
+  }
+  
+  
+  expression_all_longer <- expression_all_longer %>% 
+    group_by(Species)
+  
+  
+  
+  for(q in 1:length(unique(expression_all_longer$Species))){
+    
+    species <- unique(expression_all_longer$Species)[q]
+    
+    
+    df <- expression_all_longer %>% 
+      filter(Species == species)
+    
+    sub_title <- paste0(species)
+    
+    plots[[length(plots)+1]]  <- 
+      ggplot(data = df, aes(x = Samples, y = Expression, col = Genes ,group = Genes)) +
+      geom_line(linewidth = 2) +
+      ggtitle(sub_title) + ylab("Expression")
+    
+    
+    
+    
+  }
+  
+  print(tri)
+  
+  plot_title <- ggdraw() + draw_label(tri, fontface='bold')
+  
+  print(plot_grid(plot_title, NULL, plotlist = plots, ncol = 2, nrow = 4))
+  
+}
+
+
+```
+
+
+
+
+
+

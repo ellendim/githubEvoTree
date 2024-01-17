@@ -36,7 +36,7 @@ Flow:
 
 2) Filter the ortholog group file to only contain annotated genes for the specific GO term and that only occur in the gene set we are studying (ex. ultra-conserved genes). Fill in which gene set is to be used!
 
-## Filtering by GO terms
+# Filtering by GO terms
 
 First GO: GO:0009834 - plant-type secondary cell wall biogenesis
 Second GO: GO:1903298 - negative regulation of hypoxia-induced intrinsic apoptotic signaling...
@@ -46,14 +46,16 @@ Third GO: GO:0045492 - xylan biosynthetic process
 
 # ---------------------------------------------------------------
 
-load("summary_table_angiosperms_0.05.Rdata")
-summary_table <- summary_table_angiosperms_0.05
+load("summary_table_cons_0.05.RData")
+summary_table <- summary_table_cons_0.05
 
 species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
 
-conserved_genes <- read_delim("Data/DATA/textFiles/angiosperms_genes_aspen.txt", "\t")
+conserved_genes <- read_delim("Data/DATA/textFiles/cons_genes_aspen.txt", " ")
 
 ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t")
+
+co_expressed_genes <- read.delim("Data/DATA/textFiles/all_co-expressed_genes.txt", header = TRUE, sep = " ")
 
 load("go_list.RData")
 
@@ -76,22 +78,22 @@ load("summary_table_cons_0.05.Rdata")
 non_overlapping_GO <- summary_table %>% 
   filter(!(`GO id` %in% summary_table_cons_0.05$`GO id`))
 
-paste0("Number of non-overlapping GO IDs: ", length(unique(overlapping_GO$`GO id`)) )
+paste0("Number of non-overlapping GO IDs: ", length(unique(non_overlapping_GO$`GO id`)) )
 
 actual_GO_terms <- go_list %>% 
   filter(`GO ID` %in% summary_table$`GO id`) %>% 
-  filter(`Sequence Name` %in% conserved_genes$Asp) 
+  filter(`Sequence Name` %in% conserved_genes$Asp) %>% 
+  left_join(summary_table, join_by(`GO ID` == `GO id`)) %>% 
+  select(-c(4:7))
 
-length(unique(conserved_genes$Asp))
-length(unique(actual_GO_terms$`Sequence Name`))
-
+unique(actual_GO_terms$`GO term`)
 
 filtered_sum_table <- summary_table %>% 
   filter(`GO id` %in% actual_GO_terms$`GO ID`) # Just to look at
 
 
-go_input <- "GO:0009734"
-go_term <- "auxin"
+go_input <- "GO:0042732"
+go_term <- "D-xylose metabolic process"
 
 # Filter the go-list to only contain asp genes associated with the GO id
 goterm_to_genes <- actual_GO_terms %>% 
@@ -113,7 +115,16 @@ genes_to_all_genes <- ortholog_group_file %>%
   mutate(Asp = gsub("Poptre_", "", Asp)) %>%
   mutate(Asp = gsub("\\.\\d\\.p\\d$", "", Asp)) %>% 
   select(OrthoGroup, all_of(species_list)) %>% 
-  filter(Asp %in% goterm_to_genes$`Sequence Name`) 
+  filter(Asp %in% goterm_to_genes$`Sequence Name`)%>% 
+  separate_rows(Birch, sep = ", ") %>%
+  separate_rows(Cher, sep = ", ") %>% 
+  separate_rows(Nor, sep = ", ") %>% 
+  separate_rows(Lodge, sep = ", ") %>% 
+  separate_rows(Scots, sep = ", ") %>% 
+  mutate(Birch = gsub("Betpen_", "", Birch)) %>%
+  mutate(Cher = gsub("Prunavi_", "", Cher)) %>%
+  mutate(Nor = gsub("\\.p\\d$", "", Nor)) %>%
+  mutate(Cher = gsub("\\.p\\d$", "", Cher)) 
 
 
 
@@ -126,7 +137,7 @@ genes_to_all_genes <- ortholog_group_file %>%
 file_list_2 <- c()
 for (i in species_list){
 
-  expr_name <- paste0("Data/DATA/transcriptomicsData/",i,"Wood_transcriptomics.txt")
+  expr_name <- paste0("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/",i,"Wood_transcriptomics_hm.txt")
   file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
 
 }
@@ -161,19 +172,30 @@ According to PlantGenie, the following genes actually contain the GO:
 # aspGene_to_OG <- genes_to_all_genes %>%  
 #   filter(Asp %in% genes_to_plot_filtered)
 
-# Separate rows when there are fewer genes
+filtered_co_ex <- co_expressed_genes %>% 
+  filter(MaxpVal < 0.05) %>% 
+  select(GeneSpecies1, GeneSpecies2) 
+
+# Create a vector to only contain co-expressed genes
+gene_vector <- data.frame(genes = unlist(filtered_co_ex, use.names = FALSE))
+
+gene_vector <- gene_vector %>% 
+  distinct(genes, .keep_all = T)
+
+
+# Filter the orthologs to only keep the genes that are significantly co-expressed
+
 OG_to_genes <- genes_to_all_genes %>% 
-  separate_rows(Birch, sep = ", ") %>%
-  separate_rows(Cher, sep = ", ") %>% 
-  separate_rows(Nor, sep = ", ") %>% 
-  separate_rows(Lodge, sep = ", ") %>% 
-  separate_rows(Scots, sep = ", ") %>% 
- mutate(Birch = gsub("Betpen_", "", Birch)) %>%
-  mutate(Cher = gsub("Prunavi_", "", Cher)) %>%
-  mutate(Nor = gsub("\\.p\\d$", "", Nor)) %>%
-  mutate(Cher = gsub("\\.p\\d$", "", Cher))
+  filter(Scots %in% gene_vector$genes) %>% 
+  filter(Nor %in% gene_vector$genes) %>% 
+  filter(Lodge %in% gene_vector$genes) %>% 
+  filter(Asp %in% gene_vector$genes) %>% 
+  filter(Cher %in% gene_vector$genes) %>% 
+  filter(Birch %in% gene_vector$genes) %>% 
+  group_by(OrthoGroup) 
+  # %>% slice(1)
 
-
+# Print out the unique orthologs for each species
 
 for(i in 2:ncol(OG_to_genes)){
   col <- colnames(OG_to_genes[i])
@@ -194,8 +216,6 @@ for(i in 2:ncol(OG_to_genes)){
 
 
 
-
-
 ```{r fig.dim=c(15,15), message=FALSE, warning=FALSE}
 
 expression_all_longer <- data.frame() 
@@ -203,8 +223,9 @@ expression_all_longer <- data.frame()
 
 for(i in 1:length(file_list_2)){
 
+  
 
-species <- sapply(strsplit(file_list_2[i], "transcriptomicsData/"), "[",2)
+species <- sapply(strsplit(file_list_2[i], "/transcriptomicsForHeatmaps/"), "[",2)
 species <- sapply(strsplit(species, "Wood"), "[", 1)    
   
 filtering_vector <- OG_to_genes %>% 
@@ -278,7 +299,7 @@ plot_grid(plot_title, NULL,plotlist = plots, ncol = 2, nrow = 4)
 ```
 
 
-## Filtering by selected genes
+# Filtering by selected genes
 
 
 Are these genes below amongst the ultra conserved genes? Amongst the less conserved genes?

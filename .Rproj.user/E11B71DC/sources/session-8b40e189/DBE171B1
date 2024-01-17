@@ -1,0 +1,28 @@
+{
+    "id": "DBE171B1",
+    "path": "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/HEATMAPS_CONSERVED_GENES_main_ver2.1_using_ultra_ultra_cons_genes.Rmd",
+    "project_path": "HEATMAPS_CONSERVED_GENES_main_ver2.1_using_ultra_ultra_cons_genes.Rmd",
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1705416156851.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "tempName": "Untitled1",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "122,13",
+        "scrollLine": "98",
+        "chunk_output_type": "console"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1705499755,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1705499755814,
+    "read_only": false,
+    "read_only_alternatives": []
+}

@@ -11,13 +11,12 @@
 library(dplyr)
 library(tidyr)
 library(cowplot)
-library(ComplexHeatmap)
-setwd("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Comparative-heatmap_files")
+
 
 
 # -------------------------- NORWOOD -------------------------- 
 
-expression_data_nor <- read.delim("Data/DATA/NorWood_transcriptomics_original.txt")
+expression_data_nor <- read.delim("Data/DATA/transcriptomicsData/NorWood_transcriptomics.txt")
 expression_data_nor_imp <- expression_data_nor %>%
   select(c(1:19)) %>%
   mutate(S1.10 = (S1.09 +S1.11)/2, .after = S1.09) %>% 
@@ -28,24 +27,25 @@ expression_data_nor_imp <- expression_data_nor %>%
 
 
 # Save with the same file name structure as the others, careful not to mix with original!
-write.table(expression_data_nor_imp, file = "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Comparative-heatmap_files/Data/DATA/NorWood_transcriptomics.txt",
-            sep = "\t",row.names = T )
+write.table(expression_data_nor_imp, file = "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/NorWood_transcriptomics_hm.txt",
+            sep = "\t",row.names = F )
 
-q <-read.delim("Data/DATA/NorWood_transcriptomics.txt")
+
+q <-read.delim("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/NorWood_transcriptomics_hm.txt")
 
 # -------------------------- BIRCHWOOD -------------------------- 
 
-expression_data_birch <- read.delim("Data/DATA/BirchWood_transcriptomics_original.txt")
+expression_data_birch <- read.delim("Data/DATA/transcriptomicsData/BirchWood_transcriptomics.txt")
 expression_data_birch_imp <- expression_data_birch %>%
   select(c(1:27)) %>%
   mutate(B1.10 = (B1.09 +B1.11)/2, .after = B1.09) %>% 
   mutate(B1.24 = (B1.23 +B1.25)/2, .after = B1.23) 
 
 # Save with the same file name structure as the others, careful not to mix with original!
-write.table(expression_data_birch_imp, file = "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Comparative-heatmap_files/Data/DATA/BirchWood_transcriptomics.txt",
-            sep = "\t",row.names = T )
+write.table(expression_data_birch_imp, file = "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/BirchWood_transcriptomics_hm.txt",
+            sep = "\t",row.names = F )
 
-q <-read.delim("Data/DATA/BirchWood_transcriptomics.txt")
+
 
 
 # -------------------------- CHERWOOD -------------------------- 
@@ -53,7 +53,7 @@ q <-read.delim("Data/DATA/BirchWood_transcriptomics.txt")
 # From heatmaps we see that sample nr. 17 stands out in all correlations.
 # Wish to remove + imputate.
 
-expression_data_cher <- read.delim("Data/DATA/CherWood_transcriptomics_original.txt")
+expression_data_cher <- read.delim("Data/DATA/transcriptomicsData/CherWood_transcriptomics.txt")
 expression_data_cher_imp <- expression_data_cher %>%
   select(c(1:28)) %>%
   select(-C1.17) %>% 
@@ -61,10 +61,10 @@ expression_data_cher_imp <- expression_data_cher %>%
 
 
 # Save with the same file name structure as the others, careful not to mix with original!
-write.table(expression_data_cher_imp, file = "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Comparative-heatmap_files/Data/DATA/CherWood_transcriptomics.txt",
-            sep = "\t",row.names = T )
+write.table(expression_data_cher_imp, file = "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/CherWood_transcriptomics_hm.txt",
+            sep = "\t",row.names = F )
 
-q <-read.delim("Data/DATA/CherWood_transcriptomics.txt")
+
 
 
 

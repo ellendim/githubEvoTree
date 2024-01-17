@@ -1,0 +1,210 @@
+---
+title: "Heatmaps - conserved genes"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(gplots)
+library(cowplot)
+library(circlize)
+
+```
+
+```{r}
+
+ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t") %>% 
+  mutate(Pinsyl.SHORT.cp.pep = Pinsyl.SHORT.pep) %>% 
+  rename(
+    Asp = Poptre.SHORT.pep,
+    Birch = Betpen.SHORT.pep,
+    Nor = Picabi.SHORT.pep,
+    Scots = Pinsyl.SHORT.pep,
+    Cher = Prunavi.SHORT.pep,
+    Lodge = Pinsyl.SHORT.cp.pep,
+    OrthoGroup = Orthogroup) %>% 
+  mutate(Asp = gsub("Poptre_", "", Asp)) %>%
+  mutate(Asp = gsub("\\.\\d\\.p\\d$", "", Asp)) %>% 
+  mutate(Birch = gsub("Betpen_", "", Birch)) %>%
+  mutate(Cher = gsub("Prunavi_", "", Cher)) %>%
+  mutate(Nor = gsub("\\.p\\d$", "", Nor)) %>%
+  mutate(Cher = gsub("\\.p\\d$", "", Cher))
+
+
+
+```
+
+
+
+1. Read the expression-file
+2. For the heatmaps: cluster the genes, while keeping the samples in the same order. Plot.
+
+# Creating loop for all species
+
+```{r message=FALSE, warning=FALSE}
+
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/",i,"Wood_transcriptomics_hm.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+  
+}
+
+
+for (i in 1:length(file_list_2)){
+  
+  i <- 6
+
+  x <- read_delim(file_list_2[i], show_col_types = FALSE)
+  
+  species <- sapply(strsplit(file_list_2[i], "transcriptomicsData/transcriptomicsForHeatmaps/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[", 1)
+  
+  # 
+  # set.seed(3)
+  # samples_2000 <- sample(1:nrow(x),2000)
+  # expression_data_sample <- x[samples_2000,]
+  # 
+  
+  # Filter the ortholog group file to only contain expressed genes. 
+  # We now have expressed genes and the ortholog groups.
+  # rearranged <- ortholog_group_file %>%
+  #   rename(Genes = species) %>%
+  #   select(OrthoGroup, Genes) %>%
+  #   separate_rows(Genes, sep = ", ") %>%
+  #   filter(Genes %in% x$Genes) %>% 
+  #   distinct(Genes, .keep_all = T)
+  # # 
+  # # Then we want only the expressed genes that are in the ortholog group file.
+  #  expr_genes <- x %>%
+  #   filter(Genes %in% rearranged$Genes) %>%
+  #   data.frame()
+  # # 
+  # # 
+  # expr_genes$Genes <- rearranged$Genes
+    # Genes should be rearranged now. There will be fewer genes now due to filtering with the ortholog group file... not all expressed genes have orthologs.
+
+  expression_data <- x %>%     
+    column_to_rownames("Genes") %>% 
+    select(contains("1.")) 
+  
+  
+
+  # scaled_data <- t(scale(t(expression_data), center = T, scale = T)) 
+  # scaled_data[is.nan(scaled_data)] <-0 #Lodge had a few rows with NaNs which became an issue when running Lodge on the clade-specific genes.
+  
+  
+  distance_matrix <- dist(expression_data, method = "euclidean")
+  
+  scaled_data <- t(scale(t(expression_data), center = TRUE, scale = TRUE))
+  scaled_data[is.nan(scaled_data)] <-0
+  dm_genes_scaled <- dist(scaled_data, method = "euclidean")
+  hclust_genes <- hclust(dm_genes_scaled, method = "ward.D")
+
+
+dend_genes <- as.dendrogram(hclust_genes) # It is possible to plot the hclust-object, but by changing class to a dendrogram object the plot is 'nice'. Also adds more functions.
+
+genes_ordered <- reorder(dend_genes,1:nrow(expression_data))
+dend_genes <- as.dendrogram(hclust_genes) 
+
+
+colorR <- colorRampPalette(c("blue","white","red"))(20)
+
+hm <- heatmap.2(as.matrix(scaled_data),
+        Colv = FALSE,
+        Rowv = dend_genes,
+        scale = "row",
+        labRow = rep("", nrow(scaled_data)),
+        dendrogram = "none",
+        margins = c(5, 5), 
+        trace = "none",
+        cexRow = 0.4,
+        cexCol = 0.8,
+        main = species,
+        col = colorR
+)
+
+
+    
+  new_name <- as.character(paste0("hm_",species))
+  gdata::mv("hm", new_name) 
+
+}
+
+
+
+```
+
+
+
+```{r}
+
+
+
+```
+
+
+
+
+```{r}
+lgd_1_grob <- grid.grabExpr(draw(lgd_1))
+g1 <- as_grob((`hm_Asp`))
+g2 <- grid.grabExpr(print(`hm_Cher`))
+g3 <- grid.grabExpr(print(`hm_Birch`))
+g4 <- grid.grabExpr(print(`hm_Nor`))
+g5 <- grid.grabExpr(print(`hm_Scots`))
+g6 <- grid.grabExpr(print(`hm_Lodge`))
+
+
+```
+
+```{r fig.dim = c(40,20)}
+# 
+grid_plot_all<-plot_grid(g1,g4,g2,g3,g6,g5, nrow = 1, ncol = 6, rel_widths = c(1,1,1,1,1,1), rel_heights = c(0.5, 0.5, 0.5, 1,1,1) ,axis = "b")
+grid_plot_all
+
+
+# 
+grid_plot_angiosperms <-plot_grid(g1,g2, g3,  nrow = 1, ncol = 3)
+grid_plot_angiosperms
+
+
+```
+
+
+
+
+```{r fig.dim = c(40,20)}
+# 
+# grid_plot_conserved <-plot_grid(g1,g4,g2,g3,g6,g5,lgd_1_grob, nrow = 1, ncol = 7, rel_widths = c(1,1,1,1,1,1, 1), rel_heights = c(0.5, 0.5, 0.5, 1,1,1,1) ,axis = "b")
+# grid_plot_conserved
+
+
+
+grid_plot_gymnosperms <-plot_grid(g4,g5, g6,  nrow = 1, ncol = 3)
+grid_plot_gymnosperms
+
+```
+
+
+
+
+
+
+
+
+
+
