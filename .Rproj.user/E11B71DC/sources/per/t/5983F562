@@ -1,0 +1,27 @@
+{
+    "id": "5983F562",
+    "path": "C:/Users/ellen/OneDrive - Norwegian University of Life Sciences/M60-BIAS/EvoTree/githubEvoTree/HEATMAP_main_ver5.7.2_higher-pval-and-reference_legend_rerun.Rmd",
+    "project_path": "HEATMAP_main_ver5.7.2_higher-pval-and-reference_legend_rerun.Rmd",
+    "type": "r_markdown",
+    "hash": "1123782341",
+    "contents": "",
+    "dirty": false,
+    "created": 1715690754921.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "chunk_output_type": "console",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "244,54",
+        "scrollLine": "228"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1715692314,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1715692314549,
+    "read_only": false,
+    "read_only_alternatives": []
+}

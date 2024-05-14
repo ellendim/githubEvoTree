@@ -1,0 +1,76 @@
+---
+title: "GO enrichment"
+author: "Ellen Dimmen Chapple"
+date: '`r format(Sys.time(), "%d.%m.%Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(tidyverse)
+
+```
+
+
+
+```{r}
+
+load("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/summary_table_uuc_angio.RData")
+
+load("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/summary_table_uuc.RData")
+
+load("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/summary_table_uuc_gymno.RData")
+```
+
+```{r}
+
+overlapping_GO_terms_angio_across <- summary_table_uuc %>% 
+  filter(`GO id` %in% summary_table_uuc_angio$`GO id`)
+
+
+overlapping_GO_terms_gymno_across <- summary_table_uuc %>% 
+  filter(`GO id` %in% summary_table_uuc_gymno$`GO id`)
+
+overlapping_GO_terms_gymno_angio <- summary_table_uuc_gymno %>% 
+  filter(`GO id` %in% summary_table_uuc_angio$`GO id`)  
+
+```
+
+
+
+```{r}
+
+unique_go_across <- summary_table_uuc %>% 
+  filter((!(`GO id` %in% summary_table_uuc_angio$`GO id`))&(!(`GO id` %in% summary_table_uuc_gymno$`GO id`)))
+
+unique_go_angio <- summary_table_uuc_angio %>% 
+  filter((!(`GO id` %in% summary_table_uuc$`GO id`))&(!(`GO id` %in% summary_table_uuc_gymno$`GO id`)))
+
+unique_go_gymno <- summary_table_uuc_gymno %>% 
+  filter((!(`GO id` %in% summary_table_uuc$`GO id`))&!((`GO id` %in% summary_table_uuc_angio$`GO id`)))
+
+```
+
+
+
+```{r}
+df <- unique_go_gymno[,1]
+
+for (i in df){
+  cat(i, "\n")
+}
+
+
+
+```
+

@@ -37,7 +37,7 @@ library(circlize)
 ```{r}
 
 
-species_list <- c("Cher", "Asp", "Birch","Nor", "Scots", "Lodge") 
+species_list <- c("Cher", "Asp", "Birch", "Nor", "Scots", "Lodge") 
 # Change this based on which set that is to be used: "Cher", "Asp", "Birch", "Nor", "Scots", "Lodge"
 
 
@@ -51,9 +51,10 @@ for (i in species_list){
 
 # UUC orthologs
 
-load("Data/DATA/uuc_orthologs")
+load("Data/DATA/uuc_orthologs.RData")
 
-conserved_genes <- uuc_genes
+
+conserved_genes <- uuc_genes_filtered[,-c(3:4)]
 
 
 ```
@@ -63,11 +64,11 @@ conserved_genes <- uuc_genes
 ```{r fig.height=20, fig.width=40, message=FALSE, warning=FALSE}
 
 
-
-# Legend for heatmap
-col_function_1 <- colorRamp2(c(-3, 0 ,3), c("#0571b0", "#f7f7f7","#ca0020" ))
-
-lgd_1 = Legend(col_fun = col_function_1, title = "Z-value?", title_gp = gpar(fontsize = 20) , legend_height = unit(12, "cm"), grid_width = unit(1, "cm"), labels_gp = gpar(fontsize = 20),at = c(-3, 0 ,3), title_gap =  unit(0.5, "cm"))
+# 
+# # Legend for heatmap
+# col_function_1 <- colorRamp2(c(-4, 0 ,4), c("#08306b", "#f7f7f7","#de2d26"))
+# 
+# lgd_1 <- Legend(col_fun = col_function_1, title = "Z-value", title_gp = gpar(fontsize = 15, fontface = "bold") , legend_height = unit(5, "cm"), grid_width = unit(0.5, "cm"), title_position = "topleft", labels_gp = gpar(fontsize = 10, fontface = "bold"),at = c(-4, 0 ,4), title_gap =  unit(0.5, "cm"))
 
 
 
@@ -83,14 +84,18 @@ for (i in 1:length(file_list_2)){
   x <- read_delim(file_list_2[i], show_col_types = FALSE) %>% 
     select(Genes, contains("1."))
   
+  species <- sapply(strsplit(file_list_2[i], "transcriptomicsData/transcriptomicsForHeatmaps/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[", 1)  
+  
+  uuc_genes_one_species <- uuc_genes_filtered[,-4] %>% 
+    filter(Species == species)
 
   
   
-  species <- sapply(strsplit(file_list_2[i], "transcriptomicsData/transcriptomicsForHeatmaps/"), "[",2)
-  species <- sapply(strsplit(species, "Wood"), "[", 1)
+
   
   uuc_expr <- x %>% 
-    filter(Genes %in% conserved_genes$Genes)
+    filter(Genes %in% uuc_genes_one_species$Genes)
   
   print(cat(species, ": ", nrow(uuc_expr), " genes."))
 
@@ -122,12 +127,12 @@ combined_expression_matrix <- combined_expression_data %>%
   mutate_if(is.character, as.numeric) %>% 
   as.matrix()
   
-column_split <- rep("A", 158)
+column_split <- rep("A", 162)
 column_split[26:53] <- "B"
 column_split[54:80] <- "C"
-column_split[81:103] <- "S"
-column_split[104:130] <- "T"
-column_split[132:158] <- "L"
+column_split[81:107] <- "S"
+column_split[108:135] <- "T"
+column_split[136:162] <- "L"
 
 
 
@@ -139,13 +144,16 @@ hm <-  Heatmap(combined_expression_matrix, show_column_names = TRUE,
                clustering_distance_rows = "euclidean",
                clustering_method_rows = "ward.D2",
                show_row_names = FALSE,
-               width = ncol(combined_expression_matrix)*unit(5, "mm"),
-               height = nrow(combined_expression_matrix)*unit(2, "mm"),
                column_order = 1:ncol(combined_expression_matrix),
-               column_title_gp = gpar(fontsize = 1),
-               show_heatmap_legend = T,
-               col = col_function_1,
-               column_split = column_split
+               column_title_gp = gpar(fontsize = 15),
+               column_names_gp = gpar(fontsize = 7),
+               show_heatmap_legend = FALSE,
+               col =  c("#08306b", "#f7f7f7","#de2d26"),
+               column_split = column_split,
+               column_title = c("Aspen", "Birch", "Cherry", "Scots Pine", "Norway Spruce", "Lodgepole Pine"),
+               column_title_side = ("bottom"),
+               heatmap_width = unit(40, "cm"), 
+               heatmap_height = unit(14, "cm")
 )
 
 hm
@@ -154,8 +162,23 @@ hm
 ```
 
 
+```{r}
+g1 <- grid.grabExpr(print(hm))
 
 
+plot_grid(g1)
+
+```
+
+
+```{r}
+
+row_order(hm)
+phloem_orthogroups <- combined_expression_data$Orthogroup[ c( 138,  48 ,612 ,380 ,304,  34  , 1)]
+print(phloem_orthogroups)
+
+
+```
 
 
 

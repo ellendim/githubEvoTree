@@ -1,0 +1,284 @@
+---
+title: "Conserved I-graph"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r}
+
+library(tidyverse)
+library(igraph)
+library(ggpattern)
+
+```
+
+# Finding cliques based on weight of edges
+
+```{r}
+
+# Read in expressologs
+expressologs <- read.delim("Data/DATA/textFiles/all_expressed_genes.txt", sep = " ") %>%  # 12,646 orthogroups (before p-val filtering), and 11,751 after.
+  filter(MaxpVal < 0.8)
+
+
+expressologs_2 <- read.delim("Data/DATA/textFiles/all_expressed_genes.txt", sep = " ") %>% 
+  filter(MaxpVal < 0.1)
+
+cat("Orthogroups with at least one expressed pair:", expressologs %>% distinct(OrthologGroup) %>% nrow(), "\n")
+cat("Orthogroups with at least one co-expressolog:", expressologs_2 %>% distinct(OrthologGroup) %>% nrow(), "\n")
+
+# uniqueOrthologGroups <- unique(expressologs$OrthologGroup)
+```
+
+
+
+```{r}
+
+# 
+load("Data/DATA/ones_and_zeros_all.RData")
+
+df_with_sums <- ones_and_zeros_all %>%
+  mutate(Angiosperms = rowSums(. [1:3])) %>%
+  mutate(Cross = rowSums(. [4:12]))%>%
+  mutate(Gymnosperms = rowSums(. [13:15])) %>%
+  mutate(Conserved = rowSums(. [1:15]))
+
+# Now we want to select only the ortholog groups with a gymnosperm sum of 3, while the others groups are 0.
+
+
+conserved_ogs_gymno <- df_with_sums %>%
+  filter(Angiosperms == 0 & Gymnosperms == 3 & Cross == 0)
+
+
+conserved_ogs_gymno <- conserved_ogs_gymno %>% 
+  filter(rownames(conserved_ogs_gymno) %in% expressologs$OrthologGroup)
+
+cat("Number of gymnosperm-specific ortholog groups that have at least one co-expressed (not p-value cutoff) expressolog for all 3 pairs: ", nrow(conserved_ogs_gymno))
+
+gymno_spec_OG <- rownames(conserved_ogs_gymno)
+
+```
+
+
+
+
+```{r}
+
+# First - find all ortholog groups with at least one clique that involves only 3 species.
+expressologs_from_max_cliques <- c()
+max_clique_ortholog_groups <- c()
+uuc_genes <- c()
+
+for (g in gymno_spec_OG) {
+  
+  # g <- "OG0000773"
+  
+  expressologs_g <- expressologs %>% 
+    filter(OrthologGroup == g) %>%
+    mutate(UGeneSpecies1 = paste0(Species1, "-", GeneSpecies1),
+           UGeneSpecies2 = paste0(Species2, "-", GeneSpecies2))
+  
+  nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+  
+  edges <- data.frame(from = expressologs_g$UGeneSpecies1, 
+                      to = expressologs_g$UGeneSpecies2,  weight = -log(expressologs_g$MaxpVal))
+  
+  # 
+  net <- graph_from_data_frame(edges, directed = FALSE, vertices = nodes)
+  
+  max_clique <- largest_weighted_cliques(net)
+  # Finds all of the maximal weighted cliques. 
+  print(g)
+  
+  for( c in 1:length(max_clique)){
+    
+    # c <-1
+    clique <- max_clique[[c]]
+    clique <- attr(clique, "names")
+    
+    clique_species <- unique(str_split_fixed(clique, "-", n = 2)[,1])
+    clique_genes <-  str_split_fixed(clique, "-", n = 2)[,2]
+     # print(clique_species)
+     # print(clique_genes)
+     # 
+    if(length(clique_species) == 3 ) {
+      
+      max_clique_ortholog_groups <- c(max_clique_ortholog_groups, g)
+
+      
+      expressologs_in_clique <- expressologs_g %>%
+        filter(UGeneSpecies1 %in% clique & UGeneSpecies2 %in% clique)%>% 
+        mutate(cliqueSum = sum(MaxpVal))
+      
+      expressologs_from_max_cliques <- rbind(expressologs_from_max_cliques, expressologs_in_clique)
+      
+          
+      uuc_genes <- rbind(uuc_genes, data.frame(
+      Orthogroup = rep(g, length(clique_genes)),
+      Genes = clique_genes,
+      Species = clique_species
+      
+      ))
+
+      
+      
+    }
+  }
+  
+  
+  
+  
+  
+}
+      
+
+
+cat("Number of ortholog groups with at least one expressolog: ", length(unique(gymno_spec_OG)),"\n","Number of ortholog groups with at least one fully sized clique: ",length(unique(max_clique_ortholog_groups)))
+
+
+```
+
+
+
+# Creating data frame for group-wise counting
+
+
+```{r}
+
+# # Set p-value threshold
+p_thr <- 0.1
+
+max_clique_group_sum <- expressologs_from_max_cliques %>% 
+  mutate(species_pair = paste0(Species1, Species2))%>%  
+  group_by(OrthologGroup) %>% 
+  arrange(cliqueSum) %>% 
+  slice(1:3) %>% 
+  ungroup()
+
+speciesPairs <- tibble(SpeciesPair = max_clique_group_sum %>% distinct(species_pair) %>% pull(species_pair),
+                       SpeciesPairClade = c( "Gymno","Gymno", "Gymno"))
+
+#
+
+max_clique_group_sum <-  left_join(max_clique_group_sum , speciesPairs, by = join_by("species_pair" == "SpeciesPair" ))
+
+
+max_clique_group_sum <- max_clique_group_sum %>%
+  group_by(OrthologGroup, species_pair) %>% 
+  arrange(MaxpVal) %>%
+  filter(MaxpVal < p_thr) %>% 
+  group_by(OrthologGroup) %>% 
+  mutate(conservedOG = n()) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = SpeciesPairClade, values_from = SpeciesPairClade) 
+  
+
+max_clique_group_sum$Gymno[is.na(max_clique_group_sum$Gymno)] <-0
+max_clique_group_sum$Gymno[max_clique_group_sum$Gymno != 0] <-1
+
+```
+
+
+
+```{r}
+
+# 
+ultra_conserved_gymno <- max_clique_group_sum %>%
+  mutate_at(c("Gymno"), as.numeric) %>%
+  filter(conservedOG == 3 )
+
+length(unique(ultra_conserved_gymno$OrthologGroup))
+
+partial3_conserved_gymno <- max_clique_group_sum %>%
+  mutate_at(c("Gymno"), as.numeric) %>%
+  filter(conservedOG >=2)
+
+length(unique(partial3_conserved_gymno$OrthologGroup))
+
+```
+
+
+
+```{r}
+
+count_df <- data.frame(
+  set = factor(c("A", "B", "C", "D")),
+  conserved = factor(c("Strict", "Partial", "Strict", "Partial")),
+  clique = factor(c("No", "No","Yes", "Yes")),
+  OrthologGroups = c(687, 1030, length(unique(ultra_conserved_gymno$OrthologGroup)), length(unique(partial3_conserved_gymno$OrthologGroup)))
+  
+)
+
+count_df <- count_df %>% 
+  arrange(conserved) %>% 
+  mutate(conserved = factor(conserved, levels =c("Strict", "Partial"))) %>% 
+  group_by(conserved)
+
+
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+
+# palette_1 <- c("#31a354", "#addd8e")
+
+
+palette_1 <- c( "#31688e","#fde725")
+width_1 <- 0.5
+
+
+ggplot(count_df, aes(x = conserved, y = OrthologGroups, fill = conserved)) +
+  geom_bar_pattern(aes(pattern = clique), position = "dodge",stat = "identity", width = width_1,
+                   colour = "black",
+                   pattern_angle = 45,
+                   pattern_density = 0.05,
+                   pattern_spacing = 0.025,
+                   pattern_fill = "#440154",
+                   pattern_alpha = 0.6,
+                   pattern_size = 1)  +
+  scale_fill_manual(values = palette_1)  + 
+  scale_pattern_manual(values = c(Yes = "stripe", No = "none")) +
+  guides(pattern = guide_legend(override.aes = list(fill = "cornsilk")),
+         fill = guide_legend(override.aes = list(pattern = "none"))) +
+  geom_text(aes(label = OrthologGroups, group = clique), position = position_dodge(width = 0.5), vjust = -0.5, size = 4, fontface = 2) +
+  theme_minimal() +  theme(legend.position = "right", axis.text.x = element_blank(), axis.title.x = element_blank(),panel.background = element_rect(fill = "cornsilk"), plot.background = element_rect(fill = "white")) + ggtitle("Conserved ortholog groups specific for Gymnosperms") + ylim(0,1200) + geom_hline(aes(yintercept = 1195, linetype = "Max cliques possible")) + scale_linetype_manual(values = 2)
+
+
+```
+
+
+## "Translating" gymnosperm genes to Aspen genes
+
+Not possible to translate into Aspen genes as most of the orthologs unique for gymnosperms are not found within the other species. We can do it a little differently by using Norway Spruce genes. See separate GSEA-file!
+
+
+```{r eval=FALSE, include=FALSE}
+# Saving the uuc-genes
+uuc_genes <- uuc_genes %>% 
+  filter(Orthogroup %in% ultra_conserved_gymno$OrthologGroup)
+
+save(uuc_genes, file = "Data/DATA/uuc_orthologs_gymnosperms.RData")
+
+uuc_genes_nor <- uuc_genes %>% 
+  filter(grepl("PICAB", Genes))
+
+save(uuc_genes_nor, file ="Data/DATA/uuc_orthologs_gymnosperms_nor.RData")
+# Now go to GSEA-file for gymnosperms!
+
+```
+
+
+
+
+

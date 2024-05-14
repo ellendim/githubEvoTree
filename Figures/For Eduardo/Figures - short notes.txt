@@ -1,0 +1,11 @@
+Figures - short notes:
+
+"sample_comp" - Correlation-based heatmap based on only significantly (<0.05) co-expressed genes between two species showing degree of correlation between the samples of 2 species. Each pixel describes how correlated the gene expression is for the two species are for the respectable samples. E.g. how correlated is sample 5 in Aspen with sample 7 in Birch? This gives an impression of how the samples between the species align to each other. 
+
+"hm_coex_sign_all" - Expression-based heatmap showing all significantly (<0.05) co-expressed genes for the individual species.
+
+"conserved_ortho_groups_all" - Counts ortholog groups that are 1) ultra-conserved and 2) partially conserved, next to the number of these ortholog groups that have cliques (sub-group were all nodes (genes) are linked to eachother).
+
+"hm_uuc_genes" - Similar to the heatmap above, but only with the ortholog groups with cliques with the rows ordered so that the orthologs are lined up.
+
+The last figures are expression profiles of various GO-annotated ultra-conserved genes (from cliques).

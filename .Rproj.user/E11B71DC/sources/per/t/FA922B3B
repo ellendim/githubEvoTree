@@ -1,0 +1,27 @@
+{
+    "id": "FA922B3B",
+    "path": "C:/Users/ellen/OneDrive - Norwegian University of Life Sciences/M60-BIAS/EvoTree/githubEvoTree/HEATMAPS_CONSERVED_GENES_main_ver2_using_all_coexp_genes.Rmd",
+    "project_path": "HEATMAPS_CONSERVED_GENES_main_ver2_using_all_coexp_genes.Rmd",
+    "type": "r_markdown",
+    "hash": "1854584059",
+    "contents": "",
+    "dirty": false,
+    "created": 1715692322089.0,
+    "source_on_save": false,
+    "relative_order": 3,
+    "properties": {
+        "chunk_output_type": "console",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "212,3",
+        "scrollLine": "203"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1712653031,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1712653031,
+    "read_only": false,
+    "read_only_alternatives": []
+}

@@ -1,0 +1,341 @@
+---
+title: "Conserved I-graph"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r}
+
+library(tidyverse)
+library(igraph)
+library(ggpattern)
+library(RColorBrewer)
+
+```
+
+
+# Finding cliques based on weight of edges
+
+```{r}
+# Read in expressologs
+expressologs <- read.delim("Data/DATA/textFiles/all_expressed_genes.txt", sep = " ") %>%  # 12,646 orthogroups (before p-val filtering), and 11,751 after.
+  filter(MaxpVal < 0.8)
+
+
+expressologs_2 <- read.delim("Data/DATA/textFiles/all_expressed_genes.txt", sep = " ") %>% 
+  filter(MaxpVal < 0.1)
+
+cat("Orthogroups with at least one expressed pair:", expressologs %>% distinct(OrthologGroup) %>% nrow(), "\n")
+cat("Orthogroups with at least one co-expressolog:", expressologs_2 %>% distinct(OrthologGroup) %>% nrow(), "\n")
+
+uniqueOrthologGroups <- unique(expressologs$OrthologGroup)
+
+
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+
+# First - find all ortholog groups with at least one clique that involves all 6 species.
+all_species_cliques_orthologGroups <- c()
+uuc_genes <- c()
+
+for (g in uniqueOrthologGroups) {
+  
+
+  
+  expressologs_g <- expressologs %>% 
+    filter(OrthologGroup == g) %>%
+    mutate(UGeneSpecies1 = paste0(Species1, "-", GeneSpecies1),
+           UGeneSpecies2 = paste0(Species2, "-", GeneSpecies2))
+  
+  nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+  
+  edges <- data.frame(from = expressologs_g$UGeneSpecies1, 
+                      to = expressologs_g$UGeneSpecies2)
+  
+  #  weight = -log(expressologs_g$MaxpVal)
+  net <- graph_from_data_frame(edges, directed = FALSE, vertices = nodes)
+  
+
+    
+  clique <- largest_cliques(net)[[1]]
+  clique <- attr(clique, "names")
+  
+  
+  clique_species <- unique(sapply(str_split(clique, "-"), function(x) { x[1]}))
+  # clique_genes <-  str_split_fixed(clique, "-", n = 2)[,2]
+  
+  
+
+
+  if(length(clique_species) == 6) {
+    
+
+    
+    all_species_cliques_orthologGroups <- c(all_species_cliques_orthologGroups, g)
+
+      
+      
+      
+      }}
+      
+beepr::beep(sound = 6)
+
+cat("Number of ortholog groups with at least one expressolog: ", length(unique(expressologs$OrthologGroup)),"\n","Number of ortholog groups with at least one fully sized clique: ",length(all_species_cliques_orthologGroups))
+
+
+```
+
+
+```{r}
+# Second - go through the list of ortholog groups that have at least one clique that includes all six species and find the largest weighted cliques and filter again for cliques that have at least 6 species. Compare the number of orthologs.
+
+
+largest_weighted_cliques_orthologGroups <- c()
+expressologs_from_weighted_cliques <- c()
+uuc_genes <-  c()
+
+for (g in uniqueOrthologGroups) {
+  
+     # g <- "OG0000087"
+  
+  expressologs_g <- expressologs %>% 
+    filter(OrthologGroup == g) 
+  
+  expressologs_g <- expressologs_g %>% 
+    mutate(UGeneSpecies1 = paste0(expressologs_g$Species1, "-", expressologs_g$GeneSpecies1),
+           UGeneSpecies2 = paste0(expressologs_g$Species2, "-", expressologs_g$GeneSpecies2))
+  
+  nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+  
+  edges <- data.frame(from = expressologs_g$UGeneSpecies1, 
+                      to = expressologs_g$UGeneSpecies2, weight = -log(expressologs_g$MaxpVal))
+  
+  
+  net <- graph_from_data_frame(edges, directed = FALSE, vertices = nodes)
+  
+  # plot(net)
+  
+  weighted_clique <- largest_weighted_cliques(net)[[1]]
+  weighted_clique <- attr(weighted_clique, "names")
+  
+  
+  clique_species <- unique(sapply(str_split(weighted_clique, "-"), function(x) { x[1]}))
+  clique_genes <-  str_split_fixed(weighted_clique, "-", n = 2)[,2]
+ 
+  # --------------- Code for creating network with only the clique-members.------------
+  # clique_genes_df <- expressologs_g %>%
+  #   filter(UGeneSpecies1 %in% weighted_clique & UGeneSpecies2 %in% weighted_clique)
+  # 
+  # clique_edges <- data.frame(from = clique_genes_df$UGeneSpecies1,
+  #                            to = clique_genes_df$UGeneSpecies2)
+  # 
+  # clique_nodes <- data.frame(name = unique(c(clique_genes_df$UGeneSpecies1, clique_genes_df$UGeneSpecies2)))
+  # 
+  # clique_net <- graph_from_data_frame(clique_edges, directed = FALSE, vertices = clique_nodes)
+  # 
+  # 
+  #  plot(clique_net, layout =  layout_in_circle ,vertex.size= 20,
+  #    vertex.color="#d95f0e", edge.width = 1, edge.color = "grey9", margin = 0.4, vertex.label.cex =0.8, vertex.label.family = "sans", vertex.label.font = 2, vertex.label.dist= 3)
+  
+   # If vertex labels are wanted: vertex.label.cex =0.8, vertex.label.family = "sans", vertex.label.font = 2,vertex.label.dist= 3, if not:  vertex.label =NA 
+
+  print(g)
+  
+  
+  if(length(clique_species) == 6) {
+    
+
+    largest_weighted_cliques_orthologGroups <- c(largest_weighted_cliques_orthologGroups, g)
+ 
+    expressologs_in_clique <- expressologs_g %>%
+      filter(UGeneSpecies1 %in% weighted_clique & UGeneSpecies2 %in% weighted_clique)
+    
+    
+    
+    expressologs_from_weighted_cliques <- rbind(expressologs_from_weighted_cliques, expressologs_in_clique)
+    
+      uuc_genes <- rbind(uuc_genes, data.frame(
+      Orthogroup = rep(g, length(clique_genes)),
+      Genes = clique_genes,
+      Species = clique_species
+      
+      ))
+    
+      
+      }}
+
+# beepr::beep(sound = 1)
+
+cat("Number of ortholog groups with cliques: ",length(unique(largest_weighted_cliques_orthologGroups)))
+
+
+```
+
+Based on the output the largest click is also the highest weighted clique. 
+
+# Creating data frame for group-wise counting
+
+
+```{r}
+
+# # Set p-value threshold
+p_thr <- 0.1
+
+weighted_clique_group_sum <- expressologs_from_weighted_cliques %>% 
+  mutate(species_pair = paste0(Species1, Species2))
+
+speciesPairs <- tibble(SpeciesPair = weighted_clique_group_sum %>% distinct(species_pair) %>% pull(species_pair),
+                       SpeciesPairClade = c("Cross", "Gymno", "Gymno", "Cross", "Cross", "Cross", "Cross", "Angio",
+                       "Angio", "Gymno", "Cross", "Cross", "Cross", "Cross", "Angio"))
+
+
+weighted_clique_group_sum <-  left_join(weighted_clique_group_sum , speciesPairs, by = join_by("species_pair" == "SpeciesPair" ))
+
+weighted_clique_group_sum <- weighted_clique_group_sum %>%
+  group_by(OrthologGroup, species_pair) %>% 
+  arrange(MaxpVal) %>%
+  filter(MaxpVal < p_thr) %>% 
+  group_by(OrthologGroup) %>% 
+  mutate(conservedOG = n()) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = SpeciesPairClade, values_from = SpeciesPairClade) 
+  
+weighted_clique_group_sum$Angio[is.na(weighted_clique_group_sum$Angio)] <- 0
+weighted_clique_group_sum$Angio[weighted_clique_group_sum$Angio != 0] <-1
+weighted_clique_group_sum$Gymno[is.na(weighted_clique_group_sum$Gymno)] <-0
+weighted_clique_group_sum$Gymno[weighted_clique_group_sum$Gymno != 0] <-1
+weighted_clique_group_sum$Cross[is.na(weighted_clique_group_sum$Cross)] <-0
+weighted_clique_group_sum$Cross[weighted_clique_group_sum$Cross != 0] <-1
+
+length(unique(weighted_clique_group_sum$OrthologGroup))
+
+```
+
+
+## Plotting the number of ultra-conserved and partially conserved ortholog groups
+
+From the data frame above, we can filter out how many ortholog groups have partial conservation based on cliques. 
+
+For ultra-conserved ortholog groups we require all pairs to have a significant expressolog in the clique, while the partial_3 ortholog groups must have at least 2/3 significant expressologs within the clades and 2/9 significant expressologs amongst the crossed pairs. 
+
+**Ultra-conserved - scores:**
+
+clades == 3
+cross == 9
+
+OR
+
+conservedOG == 15
+
+**Partial 3 conserved - scores:**
+
+clades >= 2
+cross >= 2
+
+
+
+```{r}
+
+
+ultra_conserved <- weighted_clique_group_sum %>% 
+  filter(conservedOG == 15)
+
+length(unique(ultra_conserved$OrthologGroup))
+
+
+partial3_conserved <- weighted_clique_group_sum %>% 
+  mutate_at(c("Angio", "Gymno", "Cross"), as.numeric) %>% 
+  group_by(OrthologGroup) %>% 
+  filter(sum(Angio) >=2 & sum(Gymno) >=2 & sum(Cross) >= 2)
+
+length(unique(partial3_conserved$OrthologGroup))
+
+```
+
+
+We first looked for cliques amongst all the ortholog groups that have at least one expressolog (not necessarily significant), then we gathered all of the ortholog groups that had cliques with all 6 species. Then we looked for the largest cliques in these ortholog groups and looked for the largest weighted clique before (again) gathering the cliques that contained all six species. This turned out the be the same number of ortholog groups as when extracting the largest cliques so it was concluded that the largest weighted cliques also were the largest cliques.
+
+
+
+```{r}
+
+count_df <- data.frame(
+  set = factor(c("A", "B", "C", "D")),
+  conserved = factor(c("Strict", "Partial", "Strict", "Partial")),
+  clique = factor(c("No", "No","Yes", "Yes")),
+  OrthologGroups = c(261, 809, length(unique(ultra_conserved$OrthologGroup)), length(unique(partial3_conserved$OrthologGroup)))
+  
+)
+
+count_df <- count_df %>% 
+  arrange(conserved) %>% 
+  mutate(conserved = factor(conserved, levels =c("Strict", "Partial"))) %>% 
+  group_by(conserved)
+
+
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+
+# palette_1 <- c("#31a354", "#addd8e")
+
+
+palette_1 <- c( "#31688e","#fde725")
+width_1 <- 0.5
+
+
+ggplot(count_df, aes(x = conserved, y = OrthologGroups, fill = conserved)) +
+  geom_bar_pattern(aes(pattern = clique), position = "dodge",stat = "identity", width = width_1,
+                   colour = "black",
+                   pattern_angle = 45,
+                   pattern_density = 0.05,
+                   pattern_spacing = 0.025,
+                   pattern_fill = "#440154",
+                   pattern_alpha = 0.6,
+                   pattern_size = 1)  +
+  scale_fill_manual(values = palette_1)  + 
+  scale_pattern_manual(values = c(Yes = "stripe", No = "none")) +
+  guides(pattern = guide_legend(override.aes = list(fill = "cornsilk")),
+         fill = guide_legend(override.aes = list(pattern = "none"))) +
+  geom_text(aes(label = OrthologGroups, group = clique), position = position_dodge(width = 0.5), vjust = -0.5, size = 4, fontface = 2) +
+  theme_minimal() +  theme(legend.position = "right", axis.text.x = element_blank(), axis.title.x = element_blank(),panel.background = element_rect(fill = "cornsilk"), plot.background = element_rect(fill = "white")) + ggtitle("Conserved ortholog groups across Angiosperms and Gymnosperms") + ylim(0,900) 
+
+
+```
+
+
+```{r}
+# Saving the uuc-genes
+uuc_genes <- uuc_genes %>% 
+  filter(Orthogroup %in% ultra_conserved$OrthologGroup)
+
+save(uuc_genes, file = "Data/DATA/uuc_orthologs.RData")
+
+```
+
+```{r}
+#Saving uuc-genes for only Aspen
+uuc_genes_asp <- uuc_genes %>% 
+  filter(grepl("Potra", Genes))
+
+save(uuc_genes_asp, file ="Data/DATA/uuc_orthologs_asp.RData") # Now go to GSEA!
+
+```
+
+
+

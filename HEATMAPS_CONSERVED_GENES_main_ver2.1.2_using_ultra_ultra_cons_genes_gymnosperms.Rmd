@@ -1,0 +1,180 @@
+---
+title: "Heatmaps - conserved genes"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(ComplexHeatmap)
+library(gplots)
+library(cowplot)
+library(circlize)
+
+```
+
+1. Read the expression-file
+2. Read in file for the conserved genes - cons_genes_all_species.
+3. Filter out genes in expression files that are not conserved. 
+4. For the heatmaps: cluster the genes. Plot.
+
+# Ultra-ultra-conserved genes - heatmap
+
+1) Load files
+
+
+
+```{r}
+
+
+species_list <- c("Nor",  "Scots","Lodge") 
+# Change this based on which set that is to be used: "Cher", "Asp", "Birch", "Nor", "Scots", "Lodge"
+
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/",i,"Wood_transcriptomics_hm.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+  
+}
+
+# UUC orthologs
+
+load("Data/DATA/uuc_orthologs_gymnosperms.RData")
+
+conserved_genes <- uuc_genes_only_one_clique[,-4]
+
+
+```
+
+
+
+```{r fig.height=20, fig.width=40, message=FALSE, warning=FALSE}
+
+
+
+# Legend for heatmap
+col_function_1 <- colorRamp2(c(-3, 0 ,3), c("#0571b0", "#f7f7f7","#ca0020" ))
+
+lgd_1 = Legend(col_fun = col_function_1, title = "Z-value?", title_gp = gpar(fontsize = 20) , legend_height = unit(12, "cm"), grid_width = unit(1, "cm"), labels_gp = gpar(fontsize = 20),at = c(-3, 0 ,3), title_gap =  unit(0.5, "cm"))
+
+
+
+# Loop
+
+combined_expression_data <- conserved_genes %>% 
+  select(Orthogroup) %>% 
+  group_by(Orthogroup) %>% 
+  slice(1)
+
+for (i in 1:length(file_list_2)){
+  
+  
+
+  x <- read_delim(file_list_2[i], show_col_types = FALSE) %>% 
+    select(Genes, contains("1."))
+  
+
+  
+  species <- sapply(strsplit(file_list_2[i], "transcriptomicsData/transcriptomicsForHeatmaps/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[", 1)
+  
+  uuc_genes_one_species <- uuc_genes_only_one_clique[,-4] %>% 
+    filter(Species == species)
+  
+
+  uuc_expr <- x %>% 
+    filter(Genes %in% uuc_genes_one_species$Genes)
+  
+  print(cat(species, ": ", nrow(uuc_expr), " genes."))
+
+  
+  scaled_data <- t(scale(t(uuc_expr[,-1]), center = T, scale = T)) 
+  
+
+  scaled_data[is.nan(scaled_data)] <-0 #Lodge had a few rows with NaNs which became an issue when running Lodge on the clade-specific genes.
+
+  scaled_data_with_genes <- cbind(Genes = uuc_expr$Genes, scaled_data)
+  
+  
+  aligning_genes <- conserved_genes[,-3] %>% 
+    left_join(as.data.frame(scaled_data_with_genes), by = "Genes") %>% 
+    na.omit() %>% 
+    distinct(Genes, .keep_all = T) # Necessary as Lodge and Scots share the same genome...
+  
+  
+
+  combined_expression_data <- cbind(combined_expression_data, aligning_genes[, -c(1:2)])
+  
+}
+
+
+combined_expression_matrix <- combined_expression_data %>% 
+  ungroup() %>% 
+  select(-1) %>% 
+  select(c(contains("S"), contains("T"), contains("L"))) %>% 
+  mutate_if(is.character, as.numeric) %>% 
+  as.matrix()
+  
+column_split <- rep("S", 82)
+column_split[28:55] <- "T"
+column_split[56:82] <- "L"
+
+
+
+
+
+hm <-  Heatmap(combined_expression_matrix, show_column_names = TRUE,
+               cluster_rows = TRUE,
+               show_row_dend = FALSE,
+               clustering_distance_rows = "euclidean",
+               clustering_method_rows = "ward.D2",
+               show_row_names = FALSE,
+               heatmap_width = unit(20, "cm"), 
+               heatmap_height = unit(14, "cm"),
+               column_order = 1:ncol(combined_expression_matrix),
+               show_heatmap_legend = F,
+               col = col_function_1,
+               column_split = column_split,
+               column_title = c("Lodgepole Pine", "Norway Spruce","Scots Pine" ),
+               column_title_gp = gpar(fontsize = 13),
+               column_names_gp = gpar(fontsize = 7),
+               column_title_side = "bottom"
+)
+
+hm
+
+
+
+```
+
+
+
+
+
+
+
+```{r}
+
+g1 <- grid.grabExpr(print(hm))
+
+
+plot_grid(g1, ncol = 1)
+
+```
+
+
+
+
+

@@ -1,0 +1,27 @@
+{
+    "id": "8D1F6262",
+    "path": "C:/Users/ellen/OneDrive - Norwegian University of Life Sciences/M60-BIAS/EvoTree/githubEvoTree/GO_ENRICHMENT_ver4.1_expression_profiles_using_tri_gene_names.Rmd",
+    "project_path": "GO_ENRICHMENT_ver4.1_expression_profiles_using_tri_gene_names.Rmd",
+    "type": "r_markdown",
+    "hash": "2407529066",
+    "contents": "",
+    "dirty": false,
+    "created": 1715692353492.0,
+    "source_on_save": false,
+    "relative_order": 4,
+    "properties": {
+        "chunk_output_type": "console",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "57,42",
+        "scrollLine": "25"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1715692386,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1715692386021,
+    "read_only": false,
+    "read_only_alternatives": []
+}

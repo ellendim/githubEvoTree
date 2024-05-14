@@ -19,15 +19,19 @@ library(cowplot)
 expression_data_nor <- read.delim("Data/DATA/transcriptomicsData/NorWood_transcriptomics.txt")
 expression_data_nor_imp <- expression_data_nor %>%
   select(c(1:19)) %>%
-  mutate(S1.10 = (S1.09 +S1.11)/2, .after = S1.09) %>% 
-  mutate(S1.15 = (S1.13 +S1.17)/2, .after = S1.13) %>% 
-  mutate(S1.14 = (S1.13 +S1.15)/2, .after = S1.13) %>% 
-  mutate(S1.16 = (S1.15 +S1.17)/2, .after = S1.15) %>% 
-  mutate(S1.21 = (S1.20+S1.22)/2, .after = S1.20)
+  mutate(S1.10 = (S1.09 + S1.11)/2, .after = S1.09) %>% 
+  mutate(S1.15 = (S1.13 + S1.17)/2, .after = S1.13) %>% 
+  mutate(S1.14 = (S1.13 + S1.15)/2, .after = S1.13) %>% 
+  mutate(S1.16 = (S1.15 + S1.17)/2, .after = S1.15) %>% 
+  mutate(S1.21 = (S1.20 + S1.22)/2, .after = S1.20) %>% 
+  mutate(S1.25 = (S1.27 + S1.22)/2, .after = S1.22) %>% 
+  mutate(S1.26 = (S1.25 + S1.27)/2, .after = S1.25) %>% 
+  mutate(S1.24 = (S1.25 + S1.22)/2, .after = S1.22) %>% 
+  mutate(S1.23 = (S1.24 + S1.22)/2, .after = S1.22)
 
 
 # Save with the same file name structure as the others, careful not to mix with original!
-write.table(expression_data_nor_imp, file = "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/NorWood_transcriptomics_hm.txt",
+write.table(expression_data_nor_imp, file = "Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/NorWood_transcriptomics_hm.txt",
             sep = "\t",row.names = F )
 
 

@@ -1,0 +1,435 @@
+---
+title: "GO enrichment"
+author: "Ellen Dimmen Chapple"
+date: '`r format(Sys.time(), "%d.%m.%Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(cowplot)
+
+```
+
+
+# Filtering by GO terms
+
+
+Needs more work... 
+The annotations from annot list (used in ComPlEx) seem better!
+
+```{r message=FALSE, warning=FALSE}
+
+# ORTHOLOG GROUPS
+ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t")
+
+# SUMMARY TABLE FROM GSEA
+load("summary_table_uuc.RData")
+summary_table <- summary_table_uuc # Rename for convenience 
+
+print("Unique GO terms - all: ")
+unique(summary_table$`GO term`)
+
+# CONSERVED AND CO-EXPRESSED GENES - p-value cutoff at 0.05
+# Create 2 separate columns of only aspen genes, then put them together to create one long column. Th en remove the duplicated genes.
+
+
+load("Data/DATA/uuc_orthologs_asp.RData")
+# conserved_genes_all <- weighted_clique_genes
+
+# conserved_genes_asp <- conserved_genes_all %>%
+#       filter(str_detect(Genes, "Potr"))
+
+annot_file <-   read.delim("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/gene_aliases_20140331.txt", sep = "\t") %>%
+    rename(Arab = locus_name,
+           Symbol = symbol,
+           Name = full_name)
+  
+annot <-
+    ortholog_group_file %>% 
+    rename(Arab = Aratha.SHORT.pep, OrthoGroup = Orthogroup) %>%
+    select(Arab, OrthoGroup) %>%
+    filter(Arab != "") %>%
+    separate_rows(Arab, sep = ", ", convert = FALSE) %>%
+    mutate(Arab = gsub("\\.\\d.p\\d$", "", Arab)) %>%
+    mutate(Arab = gsub("Aratha_", "", Arab)) %>%
+    left_join(annot_file, by = "Arab", relationship = "many-to-many") %>%
+    group_by(OrthoGroup) %>%
+    summarise(
+      Arab = paste0(unique(Arab), collapse = "; "),
+      Symbol = paste0(unique(Symbol), collapse = "; "),
+      Name = paste0(unique(Name), collapse = "; ")
+    ) %>%
+    mutate(Symbol = gsub("NA", "", Symbol),
+           Name = gsub("NA", "", Name)) %>% 
+  filter(OrthoGroup %in% uuc_genes_asp$Orthogroup)
+  
+  
+    
+go_slim_ath <- read.delim("Data/DATA/ATH_GO_GOSLIM.txt",'\t', skip =4, header = F) %>%
+  mutate(Definition = paste0(V4, " ",V5, " - ", V9)) %>%
+  mutate(GO_ID = V6) %>%
+  mutate(Sequence_name_arab = V1) %>%
+  dplyr::select(Sequence_name_arab, GO_ID,  Definition)
+
+
+
+# ANNOTATION FILE
+# load("go_list.RData")
+
+# # EXPRESSED GENES WITH ANNOTATION
+# go_list_file <- read_delim("Data/DATA/Potra22_blast2go_GO.txt",'\t')
+# 
+# # GO
+# 
+# go_list <- go_list_file %>% 
+#   separate(`Sequence Name`,into = c("Sequence Name","Sequence Variant"), sep = "\\.") %>%
+#   mutate(annot_cp =`Annotation GO ID-Annotation GO Term` ) %>% 
+#   separate(`Annotation GO ID-Annotation GO Term`,into = c("GO ID","GO Term"), sep = "^[^-]*-") %>% separate(annot_cp,into = c("GO_ID","GO_Term"), sep = "-", extra = "drop")
+# 
+# go_list <- go_list %>% 
+#   dplyr::select(`Sequence Name`, `GO Term`, GO_ID) %>% 
+#   filter(`Sequence Name` %in% uuc_genes_asp$Genes)
+
+# Filter away higher level GO terms that are not in annotation file
+# actual_GO_terms <- go_list %>% 
+#   filter(GO_ID %in%  go_arab_file_2$GO_ID) %>% 
+#   filter(GO_ID %in% summary_table$`GO id`) 
+# 
+
+
+
+go_arab_file_2 <- go_arab_file_2 %>% 
+  filter(GO_ID %in% actual_GO_terms$GO_ID)
+
+actual_GO_terms_with_arab_annot <- actual_GO_terms %>% 
+  left_join(go_arab_file_2, by = "GO_ID")
+
+
+ # save(actual_GO_terms, file = "Data/DATA/actual_GO_terms.R")
+
+# Check out the unique GO terms
+print("Unique GO terms - annotated: ")
+unique(actual_GO_terms_with_arab_annot$`GO Term`)
+unique(actual_GO_terms_with_arab_annot$Definition)
+
+
+```
+
+
+
+```{r}
+
+
+expression_uuc_asp_longer <- data.frame() 
+
+  expression_vector <- read.delim("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/AspWood_transcriptomics_hm.txt")  %>%       select(Genes, contains("1.")) %>% 
+    filter(Genes %in% unique(actual_GO_terms_with_arab_annot$`Sequence Name`))
+
+
+  samples <- colnames(expression_vector)[-1]
+  expression_vector_t <- t(expression_vector) 
+  colnames(expression_vector_t) <- expression_vector_t[1,]
+  
+
+  expression_vector_t <- expression_vector_t[-1, ,drop = F] %>% 
+    as.data.frame() %>%
+    mutate(Samples = samples) 
+  
+  
+  longer <- expression_vector_t %>% 
+    pivot_longer(-Samples,names_to = "Genes", values_to = "Expression") %>% 
+    mutate_at("Expression", as.numeric) %>% 
+    mutate(Samples = gsub("^(.+?).", "", Samples)) 
+  
+
+  
+  expression_uuc_asp_longer <- rbind(expression_uuc_asp_longer,longer)
+
+  
+
+expression_uuc_asp_longer <- expression_uuc_asp_longer %>% 
+  group_by(Genes)
+
+plots <- list()
+
+for(i in unique(expression_uuc_asp_longer$Genes)){
+  
+
+  
+  
+  df <- expression_uuc_asp_longer %>% 
+    filter(Genes == i)
+  
+    sub_title <- paste0(i)
+  
+  plots[[length(plots)+1]]  <- ggplot(data = df, aes(x = Samples, y = Expression, col = Genes ,group = Genes)) +
+    geom_line(linewidth = 2) +
+    ggtitle(sub_title) + ylab("Expression")
+  
+  print(i)
+  
+}
+
+
+```
+
+```{r fig.dim = c(20,20)}
+
+plot_group <- plots[63:83]
+plot_grid(plotlist = plot_group, ncol = 4, nrow = 5) 
+
+loops <- 18
+
+n <- 1
+m <- 13
+
+for (loop in 1:loops){
+  
+  n <- n + 13
+  m <- m + 13 
+  
+  cat(n, ":", m)
+  cat("\n")
+  
+  plot_group <- plots[n:m]
+print(plot_grid(plotlist = plot_group, ncol = 4, nrow = 5))
+  
+  
+}
+
+
+
+
+
+```
+
+
+Interesting terms:
+plant-type secondary cell wall biogenesis
+
+
+Choose a GO term and fill inn chunk below.
+
+```{r}
+go_input <- "GO:0009834"
+go_term <- "plant-type secondary cell wall biogenesis"
+
+```
+
+
+Run code.
+
+
+
+```{r}
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+
+file_list_2 <- c()
+for (i in species_list){
+
+  expr_name <- paste0("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/",i,"Wood_transcriptomics_hm.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+
+}
+
+
+```
+
+
+
+```{r}
+
+# Filter the go-list to only contain asp genes associated with the GO id
+goterm_to_genes <- actual_GO_terms_with_arab_annot %>%
+  filter(GO_ID == go_input ) %>%
+  distinct(`Sequence Name`, .keep_all = T) # removes variants
+
+# Then filter the ortholog group file to only contain the orthologs of the aspen genes associated with the GO ID we have as input.
+
+genes_to_all_genes <- ortholog_group_file %>%
+  mutate(Pinsyl.SHORT.cp.pep = Pinsyl.SHORT.pep) %>%
+  rename(
+    Asp = Poptre.SHORT.pep,
+    Birch = Betpen.SHORT.pep,
+    Nor = Picabi.SHORT.pep,
+    Scots = Pinsyl.SHORT.pep,
+    Cher = Prunavi.SHORT.pep,
+    Lodge = Pinsyl.SHORT.cp.pep,
+    OrthoGroup = Orthogroup) %>%
+  separate_rows(Asp, sep = ", ") %>%
+  mutate(Asp = gsub("Poptre_", "", Asp)) %>%
+  mutate(Asp = gsub("\\.\\d\\.p\\d$", "", Asp)) %>%
+  select(OrthoGroup, all_of(species_list)) %>%
+  filter(Asp %in% goterm_to_genes$`Sequence Name`)%>%
+  separate_rows(Birch, sep = ", ") %>%
+  separate_rows(Cher, sep = ", ") %>%
+  separate_rows(Nor, sep = ", ") %>%
+  separate_rows(Lodge, sep = ", ") %>%
+  separate_rows(Scots, sep = ", ") %>%
+  mutate(Birch = gsub("Betpen_", "", Birch)) %>%
+  mutate(Cher = gsub("Prunavi_", "", Cher)) %>%
+  mutate(Nor = gsub("\\.p\\d$", "", Nor)) %>%
+  mutate(Cher = gsub("\\.p\\d$", "", Cher))
+
+# Next step is to filter the orthologs to only contain genes that are co-expressed.
+
+
+
+OG_to_genes <- genes_to_all_genes %>%
+  filter(Scots %in% conserved_genes_all$Genes) %>%
+  filter(Nor %in% conserved_genes_all$Genes) %>%
+  filter(Lodge %in% conserved_genes_all$Genes) %>%
+  filter(Asp %in% conserved_genes_all$Genes) %>%
+  filter(Cher %in% conserved_genes_all$Genes) %>%
+  filter(Birch %in% conserved_genes_all$Genes) %>%
+  filter(OrthoGroup %in% conserved_genes_all$Orthogroup) %>% 
+  group_by(OrthoGroup)
+
+
+
+```
+
+
+By filtering the orthologs of the aspen genes that we isolated for the particular GO ID of interest with the gene_vector, we are selecting the genes (for all species) that actually are co-expressed and significant.
+
+
+```{r}
+
+for(i in 2:ncol(genes_to_all_genes)){
+  col <- colnames(genes_to_all_genes[i])
+
+  cat("Species: ", col, "\n")
+  cat("Number of unique genes: ",nrow(unique(genes_to_all_genes[,i])), "\n")
+  cat("Genes: ", "\n")
+  print(unique(genes_to_all_genes[i]))
+  cat("\n")
+  cat("\n")
+
+}
+
+
+# Prints out the orthologs for each species
+
+for(i in 2:ncol(OG_to_genes)){
+  col <- colnames(OG_to_genes[i])
+
+  cat("Species: ", col, "\n")
+  cat("Number of unique genes: ",nrow(unique(OG_to_genes[,i])), "\n")
+  cat("Genes: ", "\n")
+  print(unique(OG_to_genes[i]))
+  cat("\n")
+  cat("\n")
+}
+
+
+
+
+```
+
+
+
+
+```{r fig.dim=c(15,15), message=FALSE, warning=FALSE}
+
+expression_all_longer <- data.frame()
+
+
+for(i in 1:length(file_list_2)){
+
+
+
+species <- sapply(strsplit(file_list_2[i], "/transcriptomicsForHeatmaps/"), "[",2)
+species <- sapply(strsplit(species, "Wood"), "[", 1)
+
+filtering_vector <- OG_to_genes %>%
+  rename(Species = species)
+
+  expression_vector <- read_delim(file_list_2[i], show_col_types = FALSE)  %>%     select(Genes, contains("1.")) %>%
+    filter(Genes %in% filtering_vector$Species)
+
+  if(nrow(expression_vector > 0)){
+
+  samples <- colnames(expression_vector)[-1]
+  expression_vector_t <- t(expression_vector)
+  colnames(expression_vector_t) <- expression_vector_t[1,]
+
+
+  expression_vector_t <- expression_vector_t[-1, ,drop = F] %>%
+    as.data.frame() %>%
+    mutate(Samples = samples)
+
+
+  longer <- expression_vector_t %>%
+    pivot_longer(-Samples,names_to = "Genes", values_to = "Expression") %>%
+    mutate_at("Expression", as.numeric) %>%
+    mutate(Samples = gsub("^(.+?).", "", Samples))
+
+  longer_end <- longer %>%
+    mutate(Species = rep(species, nrow(longer)))
+
+
+
+  expression_all_longer <- rbind(expression_all_longer,longer_end)
+  } else{
+    print(paste0("Nothing to show for: ", species))
+  }
+
+
+
+}
+
+expression_all_longer <- expression_all_longer %>%
+  group_by(Species)
+
+plots <- list()
+
+for(i in 1:length(unique(expression_all_longer$Species))){
+
+  species <- unique(expression_all_longer$Species)[i]
+
+
+  df <- expression_all_longer %>%
+    filter(Species == species)
+
+  sub_title <- paste0(species)
+
+  plots[[length(plots)+1]]  <- ggplot(data = df, aes(x = Samples, y = Expression, col = Genes ,group = Genes)) +
+    geom_line(linewidth = 2) +
+    ggtitle(sub_title) + ylab("Expression")
+
+
+
+}
+
+```
+
+```{r fig.dim = c(15,15)}
+
+plot_title <- ggdraw() + draw_label(paste0(go_input," - " ,go_term), fontface='bold')
+plot_grid(plot_title, NULL,plotlist = plots, ncol = 2, nrow = 4)
+
+```
+
+
+
+
+
+
+
+
+
+
+

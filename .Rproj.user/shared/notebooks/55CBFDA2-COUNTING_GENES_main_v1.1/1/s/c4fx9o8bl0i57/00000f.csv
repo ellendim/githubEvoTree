@@ -1,0 +1,5 @@
+"0",""
+"0","species_list <- c(""Lodge"", ""Asp"", ""Nor"",""Scots"",""Birch"",""Cher"")"
+"0","#""Asp"", ""Nor"", ,  ""Cher"""
+"0","combo <- data.frame(t(combn(species_list, 2)))"
+"0",""

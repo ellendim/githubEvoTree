@@ -1,0 +1,95 @@
+---
+title: "COUNTING GENES_main_ver1.1"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+library(tidyverse)
+
+
+```
+
+
+
+```{r name list}
+
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+#"Asp", "Nor", ,  "Cher"
+combo <- data.frame(t(combn(species_list, 2)))
+
+```
+
+
+
+```{r file names}
+
+# List of file names.
+
+file_list_1 <- c()
+for (i in 1:nrow(combo)){
+  
+  s1 <- combo[i, "X1"]
+  s2 <- combo[i, "X2"]
+  
+  file_name <- paste0("Data/DATA/comparisonFiles/comparison-",s1,"_",s2,"-pearsonMR0.03no-table.RData")
+  file_list_1 <- append(file_list_1, file_name, after = length(file_list_1))
+    
+}
+
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/",i,"Wood_transcriptomics_hm.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+    
+}
+
+
+```
+
+
+```{r}
+pval <- 0.1
+
+for (x in file_list_1){
+  if (file.exists(x)){ 
+    
+    load(x) 
+    
+    p_val <- comparison_table%>%
+      select(Species1, Species2,OrthoGroup, Max.p.val) %>%
+      mutate_at("Max.p.val", as.numeric) %>%
+      filter(Max.p.val < pval)
+  
+    
+    
+    key_word_s1 <- sapply(strsplit(x, "_"), "[",1) 
+    key_word_s1 <- sapply(strsplit(key_word_s1, "-"), "[",2)
+    key_word_s2 <- sapply(strsplit(x, "_"), "[",2)
+    key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1)
+    
+    cat("Pair: ",key_word_s1, "-", key_word_s2)   
+    cat( "\n")
+    cat("Number of conserved genes directly from ComPlEx: ", nrow(comparison_table))
+    cat( "\n")
+    cat("Number of co-expressologs (p > ", pval, "): ", nrow(p_val))
+    cat( "\n")
+    cat("Percentage of all expressed genes which are co-expressologs: ", round(((nrow(p_val)/nrow(comparison_table)))*100,3),"%")
+    cat( "\n")
+    cat( "\n")
+    
+    
+    
+    
+  }
+  
+  }
+
+```
+

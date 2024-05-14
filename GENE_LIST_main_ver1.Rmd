@@ -94,12 +94,12 @@ ortho_general_filtering <- ortholog_group_file %>%
   mutate(Birch = gsub("Betpen_", "", Birch)) %>%
   mutate(Cher = gsub("Prunavi_", "", Cher)) 
 
-
+pval <- 0.1
   
 ```
 
 
-# Ortholog groups: at least 1 co-expressed and significant gene pair
+# Ortholog groups: at least 1 co-expressolog per pair
 
 1) Filter the comparison table to only contain significant expressologs.
 2) Arrange the gene pairs within each group an select the top one.
@@ -109,7 +109,8 @@ ortho_general_filtering <- ortholog_group_file %>%
 6) We are left with a df with a column for each species pair were each row is either a gene representing an ortholog group, or NA. The cells are turned into 1's and 0's depending on the presence of a gene or not.
 
 ```{r message=FALSE, warning=FALSE}
-# Co-expressed, and significant
+
+# Co-expressologs
 
 ones_and_zeros <- data.frame(
   OrthoGroup = ortho_general_filtering$OrthoGroup)
@@ -119,23 +120,19 @@ for (x in file_list_1){
   if (file.exists(x)){ 
     load(x) 
     
-    # Filter the comparison tables to just contain one gene pair for each ortholog group. 
-    
-    # x <- file_list_1[1]
-    
-    p_val <- comparison_table%>%
-    mutate_at("Max.p.val", as.numeric) %>%
-    filter(Max.p.val< 0.05) %>%  # only p-values under ...
-    arrange(Max.p.val) %>%
-    group_by(OrthoGroup) %>%
-    slice(1) %>% 
-    select(Species1, OrthoGroup, Max.p.val) %>% 
-    ungroup()
 
-    # ungroup() %>%
-    # distinct(Species1,  .keep_all = T) %>%
-    # distinct( Species2, .keep_all = T) %>%
-    # arrange(Max.p.val)
+    p_val <- comparison_table%>%
+      as.data.frame() %>% 
+      mutate_at("Max.p.val", as.numeric) %>%
+      filter(Max.p.val< pval) %>%
+      # distinct(Species1, .keep_all = T) %>%
+      # distinct(Species2, .keep_all = T) %>%
+      group_by(OrthoGroup) %>%
+      slice(1) %>% 
+      select(Species1, OrthoGroup, Max.p.val) %>% 
+      ungroup()
+
+
     
 
     key_word_s1 <- sapply(strsplit(x, "_"), "[",1) 
@@ -143,9 +140,7 @@ for (x in file_list_1){
     key_word_s2 <- sapply(strsplit(x, "_"), "[",2)
     key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1)
     
-    # print(paste0("---------------- ", key_word_s1, "-", key_word_s2, " ----------------" ))
-    # print(paste0("Number of non-unique ortholog groups: ", nrow(p_val)-length(unique(p_val$OrthoGroup)))) 
-    # print(paste0("S1 duplicates: ", nrow(p_val)-length(unique(p_val$Species1)), " S2 duplicates: ",nrow(p_val)-length(unique(p_val$Species2)) ))
+
     
     new_col_name <-as.character(paste0(key_word_s1, "-", key_word_s2))
     
@@ -193,21 +188,20 @@ no_empty_rows <- ones_and_zeros %>%
 
 paste0("Number of possible ortholog groups: ", dim(ortholog_group_file)[1], " vs. Number of genes found in at least 1 species pair (non-zero): ", dim(no_empty_rows)[1])
 
+
 ```
 
 
 
 
-# All co-expressed genes both with and without p-value filtering
+# Genes: expressed and co-expressologs
 
-List of all go expressed genes as presented in the comparison tables (pairwise).
 
-Co-expressed, but no p-value filtering.
 
 ```{r}
+# Expressed
 
-
-coexpr_genes <- data.frame(
+expr_genes <- data.frame(
   OrthologGroup = c(),
   Species1 = c(),
   GeneSpecies1 = c(),
@@ -219,8 +213,6 @@ coexpr_genes <- data.frame(
   
 )
 
-# Each pairs comparison table is filtered to only contain orthologs from the 
-# no_empty_rows data frame that has only significantly co-expressed genes.
 
 for (x in file_list_1){
   if(file.exists(x)){
@@ -235,14 +227,17 @@ for (x in file_list_1){
     
     
     genes <- comparison_table %>%
-      mutate_at("Max.p.val", as.numeric)
+      as.data.frame() %>% 
+      mutate_at("Max.p.val", as.numeric) 
+      # distinct(Species1, .keep_all = T) %>%
+      # distinct(Species2, .keep_all = T)
       # filter(Max.p.val< 0.1) %>%  # only p-values under ...
       # group_by(OrthoGroup) %>%
       # arrange(Max.p.val) %>% 
       # slice(1) 
-
+    print(paste0("Number of duplicates: ",anyDuplicated(genes$Species1), " and ",anyDuplicated(genes$Species2) ))
     
-    coexpr_genes <- rbind(coexpr_genes, data.frame(
+    expr_genes <- rbind(expr_genes, data.frame(
       OrthologGroup = genes$OrthoGroup,
       Species1 = rep(key_word_s1, nrow(genes)),
       GeneSpecies1 = genes$Species1,
@@ -257,19 +252,20 @@ for (x in file_list_1){
   }
 }
 
-coexpr_genes <- coexpr_genes %>% 
+expr_genes <- expr_genes %>% 
   arrange(OrthologGroup)
 
 ```
 
 
 
-Co-expressed genes with p-value filtering.
+
 
 ```{r}
 
+# Co-expressologs
 
-significant_genes <- data.frame(
+co_expressologs <- data.frame(
   OrthologGroup = c(),
   Species1 = c(),
   GeneSpecies1 = c(),
@@ -295,14 +291,15 @@ for (x in file_list_1){
     
     
     genes <- comparison_table %>%
+      as.data.frame() %>% 
       mutate_at("Max.p.val", as.numeric) %>% 
-      filter(Max.p.val < 0.1) # only p-values under ...
-      # group_by(OrthoGroup) %>%
-      # arrange(Max.p.val) %>% 
-      # slice(1) 
-
+      filter(Max.p.val < pval) 
+      # distinct(Species1, .keep_all = T) %>%
+      # distinct(Species2, .keep_all = T) 
+      # 
+    print(paste0("Number of duplicates: ",anyDuplicated(genes$Species1), " and ",anyDuplicated(genes$Species2) ))
     
-    significant_genes <- rbind(significant_genes, data.frame(
+    co_expressologs <- rbind(co_expressologs, data.frame(
       OrthologGroup = genes$OrthoGroup,
       Species1 = rep(key_word_s1, nrow(genes)),
       GeneSpecies1 = genes$Species1,
@@ -315,7 +312,7 @@ for (x in file_list_1){
   }
 }
 
-significant_genes <- significant_genes[with(significant_genes, (order(Species1, Species2))), ]
+co_expressologs <- co_expressologs[with(co_expressologs, (order(Species1, Species2))), ]
 
 ```
 
@@ -326,7 +323,7 @@ significant_genes <- significant_genes[with(significant_genes, (order(Species1, 
 
 Isolating the ortholog groups that are conserved in the different groups (all, angiosperms and gymnosperms) by using different definitions of conserved. Filter rows by using a threshold score. 
 
-Each pairs comparison table is filtered to only contain orthologs from the strict definition of "conserved in all species" (see further up). These genes are 1) expressed, 2) significant (max.p.val < 0.05), and 3) present in all pairs.
+Each pairs comparison table is filtered to only contain orthologs from the strict definition of "conserved in all species" (see further up). These genes are 1) expressed, 2) significant (max.p.val < 0.01), and 3) present in all pairs.
 
 Note - some ortholog groups will have non-significant gene pairs as we have selected ortholog groups with at least one co-expressed and significant gene pair. Thus some pairs within an ortholog group may be non-significant.
 
@@ -397,10 +394,6 @@ cons_genes_all_species <- data.frame(
   
 )
 
-# Each pairs comparison table is filtered to only contain orthologs from the strict definition of "conserved in all species" (see further up). These genes are 1) expressed, 2) significant (max.p.val < 0.05), and 3) present in all pairs.
-
-# OBS! We need to redefine the file list as we only want angiosperm pairs.
-
 
 
 
@@ -413,8 +406,11 @@ for (x in file_list_1){
     key_word_s2 <- sapply(strsplit(x, "_"), "[",2)
     key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1) 
     
-    conserved <- comparison_table %>% 
+    conserved <- comparison_table %>%
+      as.data.frame() %>% 
       filter(OrthoGroup %in% rows_strict_cons)
+      # distinct(Species1, .keep_all = T) %>%
+      # distinct(Species2, .keep_all = T) 
     
     cons_genes_all_species <- rbind(cons_genes_all_species, data.frame(
       OrthologGroup = conserved$OrthoGroup,
@@ -439,10 +435,11 @@ Take the df with all conserved ortholog groups and filter to only contain signif
 ```{r}
 # Only Asp genes from the strictly conserved ortholog groups
 # There are genes within the conserved ortholog groups that are not significant
+
 strictly_conserved_OGs<- cons_genes_all_species %>% 
   group_by(OrthologGroup) %>% 
   mutate_at("MaxPVal", as.numeric) %>% 
-  filter(MaxPVal < 0.05) %>% 
+  filter(MaxPVal < pval) %>% 
   ungroup()
 
 strictly_conserved_aspen <- ortho_general_filtering %>% 
@@ -529,7 +526,11 @@ for (x in file_list_1){
     key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1) 
     
     partial_3 <- comparison_table %>% 
-      filter(OrthoGroup %in% rows_partial3)
+      as.data.frame() %>% 
+      filter(OrthoGroup %in% rows_partial3)  
+      # distinct(Species1, .keep_all = T) %>%
+      # distinct(Species2, .keep_all = T) 
+      
     
     partial3_genes_all_species <- rbind(partial3_genes_all_species, data.frame(
       OrthologGroup = partial_3$OrthoGroup,
@@ -554,7 +555,7 @@ for (x in file_list_1){
 partial_3_OGs <- partial3_genes_all_species  %>% 
   group_by(OrthologGroup) %>% 
   mutate_at("MaxPVal", as.numeric) %>% 
-  filter(MaxPVal < 0.05) %>% 
+  filter(MaxPVal < pval) %>% 
   ungroup()
 
 
@@ -615,7 +616,7 @@ cons_genes_gymnosperms <- data.frame(
   
 )
 
-# Each pairs comparison table is filtered to only contain orthologs from the strict definition of "conserved in all species" (see further up). These genes are 1) expressed, 2) significant (max.p.val < 0.05), and 3) present in all pairs.
+
 
 for (x in file_list_gymno){
   if(file.exists(x)){
@@ -627,8 +628,11 @@ for (x in file_list_gymno){
     key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1) 
     
     conserved <- comparison_table %>% 
+      as.data.frame() %>% 
       filter(OrthoGroup %in% rows_strict_gymnos) %>% 
       mutate_at("Max.p.val", as.numeric) 
+      # distinct(Species1, .keep_all = T) %>%
+      # distinct(Species2, .keep_all = T) 
     
     cons_genes_gymnosperms <- rbind(cons_genes_gymnosperms, data.frame(
       OrthologGroup = conserved$OrthoGroup,
@@ -650,6 +654,7 @@ for (x in file_list_gymno){
 
 
 ```{r}
+
 # Only Asp genes from the strictly conserved ortholog groups
 
 strict_gymnos <- cons_genes_gymnosperms$OrthologGroup
@@ -708,7 +713,7 @@ cons_genes_angiosperms <- data.frame(
   
 )
 
-# Each pairs comparison table is filtered to only contain orthologs from the strict definition of "conserved in all species" (see further up). These genes are 1) expressed, 2) significant (max.p.val < 0.05), and 3) present in all pairs.
+
 
 for (x in file_list_angio){
   if(file.exists(x)){
@@ -720,8 +725,11 @@ for (x in file_list_angio){
     key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1) 
     
     conserved <- comparison_table %>% 
+      as.data.frame() %>% 
       filter(OrthoGroup %in% rows_strict_angio) %>% 
-      mutate_at("Max.p.val", as.numeric) 
+      mutate_at("Max.p.val", as.numeric)  
+      # distinct(Species1, .keep_all = T) %>%
+      # distinct(Species2, .keep_all = T) 
     
     cons_genes_angiosperms <- rbind(cons_genes_angiosperms, data.frame(
       OrthologGroup = conserved$OrthoGroup,
@@ -767,7 +775,10 @@ for (x in file_list_1){
     key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1) 
     
     partial_3 <- comparison_table %>% 
-      filter(OrthoGroup %in% rows_partial3_angio)
+      as.data.frame() %>% 
+      filter(OrthoGroup %in% rows_partial3_angio)  
+      # distinct(Species1, .keep_all = T) %>%
+      # distinct(Species2, .keep_all = T) 
     
     partial3_genes_angiosperms <- rbind(partial3_genes_angiosperms, data.frame(
       OrthologGroup = partial_3$OrthoGroup,
@@ -813,7 +824,10 @@ for (x in file_list_1){
     key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1) 
     
     partial_3 <- comparison_table %>% 
-      filter(OrthoGroup %in% rows_partial3_gymnos)
+      as.data.frame() %>% 
+      filter(OrthoGroup %in% rows_partial3_gymnos) 
+      # distinct(Species1, .keep_all = T) %>%
+      # distinct(Species2, .keep_all = T) 
     
     partial3_genes_gymnosperms <- rbind(partial3_genes_gymnosperms, data.frame(
       OrthologGroup = partial_3$OrthoGroup,
@@ -836,7 +850,7 @@ for (x in file_list_1){
 strict_angios <- cons_genes_angiosperms  %>% 
   group_by(OrthologGroup) %>% 
   mutate_at("MaxPVal", as.numeric) %>% 
-  filter(MaxPVal < 0.05) %>% 
+  filter(MaxPVal < pval) %>% 
   ungroup()
 
 
@@ -855,15 +869,15 @@ Should change to "save" so that the files are stored as R-data and not txt-files
 
 **Overview:**
 
-*coexpr_genes* - All genes that are co-expressed. No filtering for conserved or significance.
+*expr_genes* - All genes that are expressed with, with no filtering for significance.
 
-*significant_genes* - All genes that are co-expressed, but also filtered for p-value.
+*co_expressologs* - All genes that are expressed, but also filtered for p-value.
 
-*cons_genes_all_species* - All genes from ortholog groups with at least one significant and co-expressed gene pair for all pairs of species. Not all genes are significant.
+*cons_genes_all_species* - All genes from orthogroups in which all pairs have at least one co-expressolog. Not all genes within this orthogroup are significant.
 
-*cons_genes_angiosperms* - All genes from ortholog groups with at least one significant and co-expressed gene pair for all pairs of angiosperms. Not all genes are significant.
+*cons_genes_angiosperms* - All genes from ortholog groups with at least one co-expressolog for all pairs of angiosperms. Not all genes are significant.
 
-*cons_genes_gymnosperms* - All genes from ortholog groups with at least one significant and co-expressed gene pair for all pairs of gymnosperms. Not all genes are significant.
+*cons_genes_gymnosperms* - All genes from ortholog groups with at least one co-expressolog for all pairs of gymnosperms. Not all genes are significant.
 
 *strictly_conserved_aspen* - Aspen genes for the ortholog groups that are strictly conserved in all species pairs.
 
@@ -883,25 +897,28 @@ Should change to "save" so that the files are stored as R-data and not txt-files
 
 
 # Use r-data
-write.table(significant_genes, "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/textFiles/significant_genes.txt", row.names=FALSE)
-write.table(coexpr_genes, "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/textFiles/all_co-expressed_genes.txt", row.names=FALSE)
-write.table(cons_genes_all_species, "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/textFiles/cons_genes_all_species.txt", row.names=FALSE)
-write.table(cons_genes_angiosperms, "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/textFiles/cons_genes_angiosperms.txt", row.names=FALSE)
-write.table(cons_genes_gymnosperms, "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/textFiles/cons_genes_gymnosperms.txt", row.names=FALSE)
+write.table(co_expressologs, "Data/DATA/textFiles/co_expressologs.txt", row.names=FALSE)
 
-write.table(strictly_conserved_aspen, "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/textFiles/cons_genes_aspen.txt", row.names=FALSE)
+write.table(expr_genes, "Data/DATA/textFiles/all_expressed_genes.txt", row.names=FALSE)
+save(expr_genes, file = "Data/DATA/textFiles/all_expressed_genes.RData")
 
-write.table(strictly_gymnos_aspen, "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/textFiles/gymnosperms_genes_aspen.txt", row.names=FALSE)
+write.table(cons_genes_all_species, "Data/DATA/textFiles/cons_genes_all_species.txt", row.names=FALSE)
+write.table(cons_genes_angiosperms, "Data/DATA/textFiles/cons_genes_angiosperms.txt", row.names=FALSE)
+write.table(cons_genes_gymnosperms, "Data/DATA/textFiles/cons_genes_gymnosperms.txt", row.names=FALSE)
 
-write.table(strictly_angios_aspen, "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/textFiles/angiosperms_genes_aspen.txt", row.names=FALSE)
+write.table(strictly_conserved_aspen, "Data/DATA/textFiles/cons_genes_aspen.txt", row.names=FALSE)
 
-write.table(partial_3_aspen, "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/textFiles/partial_3_genes_aspen.txt", row.names=FALSE)
+write.table(strictly_gymnos_aspen, "Data/DATA/textFiles/gymnosperms_genes_aspen.txt", row.names=FALSE)
 
-write.table(partial3_genes_all_species, "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/textFiles/partial3_genes_all_species.txt", row.names=FALSE)
+write.table(strictly_angios_aspen, "Data/DATA/textFiles/angiosperms_genes_aspen.txt", row.names=FALSE)
 
-write.table(partial3_genes_angiosperms, "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/textFiles/partial3_genes_angiosperms.txt", row.names=FALSE)
+write.table(partial_3_aspen, "Data/DATA/textFiles/partial_3_genes_aspen.txt", row.names=FALSE)
 
-write.table(partial3_genes_gymnosperms, "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/textFiles/partial3_genes_gymnosperms.txt", row.names=FALSE)
+write.table(partial3_genes_all_species, "Data/DATA/textFiles/partial3_genes_all_species.txt", row.names=FALSE)
+
+write.table(partial3_genes_angiosperms, "Data/DATA/textFiles/partial3_genes_angiosperms.txt", row.names=FALSE)
+
+write.table(partial3_genes_gymnosperms, "Data/DATA/textFiles/partial3_genes_gymnosperms.txt", row.names=FALSE)
 
 ```
 
@@ -918,6 +935,11 @@ sink()
 ```
 
 
+```{r}
+
+q <-read.delim("Data/DATA/textFiles/all_expressed_genes.txt", sep =" ")
+
+```
 
 
 

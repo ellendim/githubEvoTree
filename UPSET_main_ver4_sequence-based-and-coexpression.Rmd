@@ -30,10 +30,10 @@ library(DT)
 
 ```
 
+# Lists and files
 
 ```{r}
 
-ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t")
 
 species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
 combo <- data.frame(t(combn(species_list, 2)))
@@ -63,6 +63,8 @@ for (i in species_list){
 
 ```{r message=FALSE, warning=FALSE}
 
+ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t")
+
 ortho_general_filtering <- ortholog_group_file %>%
     mutate(Pinsyl.SHORT.cp.pep = Pinsyl.SHORT.pep) %>% 
     rename(
@@ -88,6 +90,8 @@ ortho_general_filtering <- ortholog_group_file %>%
 
 # Making upset plot for all possible ortholog groups 
 
+## All species
+
 ```{r}
 # Individual species
 
@@ -106,12 +110,43 @@ ortho_seq_all <- ortho_seq_all %>%
 
 
 col_order_singles <- c( "Asp", "Birch", "Cher", "Nor", "Scots", "Lodge")
+# Specify the order we want the output
+col_order <- c(  "Asp-Birch",  "Asp-Cher", "Birch-Cher",  "Lodge-Asp", "Lodge-Birch", "Lodge-Cher",  "Asp-Nor","Nor-Birch", "Nor-Cher", "Scots-Birch", "Scots-Cher",  "Asp-Scots" ,  "Lodge-Scots", "Lodge-Nor", "Nor-Scots")
 
 ```
 
 
+**All possible orthologs - per species**
+
+All orthologs - not necessarily expressed
+
+```{r fig.dim = c(15, 10)}
+# Plot upset plot. Using sets = rev(col_order) gives set order from top to bottom. Remember keep.order = T - if not the set order will be sorted by set size.
+
+upset(ortho_seq_all, 
+      sets = rev(col_order_singles),
+      nintersects = 20, 
+      keep.order = T, 
+      order.by = "freq",
+      decreasing = T,
+      set_size.show = T,
+      text.scale = c(4, 4, 0, 4, 4, 4),
+      set_size.scale_max = 17000,
+      sets.bar.color = "#f1a983",
+      matrix.color = "#f1a983",
+      point.size = 3,
+      line.size = 1
+      )
+
+
+
+```
+
+
+## All pairs
+
 ```{r message=FALSE, warning=FALSE}
-# Pair-wise
+
 
 ortho_seq_pairs <- ortho_seq_all
 
@@ -151,12 +186,31 @@ ortho_seq_pairs <- ortho_seq_pairs %>%
 ```
 
 
+**All possible orthologs - per pairs**
+
+```{r fig.dim = c(15, 10)}
+# Plot upset plot. Using sets = rev(col_order) gives set order from top to bottom. Remember keep.order = T - if not the set order will be sorted by set size.
+
+upset(ortho_seq_pairs, 
+sets = rev(col_order),
+      nintersects = 20, 
+      keep.order = T, 
+      order.by = "freq",decreasing = T,
+      set_size.show = T,
+      text.scale = 1.5,
+      set_size.scale_max = 17000
+      )
+
+
+
+```
 
 
 
 
 
-# Making an Upset plot for all co-expressed/expressed genes
+
+# Making an Upset plot for all expressed genes
 
 Comment: for Asp there are some genes in the expression table that are not included in the ortholog-group-file.
 
@@ -204,13 +258,13 @@ for (i in col_order_singles){
   
   genes_without_ortho <- expression_data %>% 
       filter(!(Genes %in% filtered_genes$species))
-  print(paste0("Number of genes in the expression data not listed in ortholog-group-file: ", dim(genes_without_ortho)[1], " ~ ", round((dim(genes_without_ortho)[1]/nrow(expression_data))*100,3), "%" ))
+  print(paste0("Number of genes in the expression data not listed in ortholog-group-file for ", i, " :", dim(genes_without_ortho)[1], " ~ ", round((dim(genes_without_ortho)[1]/nrow(expression_data))*100,3), "%" ))
   
   filtered_genes <- filtered_genes %>% 
     filter(species %in% expression_data$Genes) %>% 
-    group_by(OrthoGroup) %>% 
+    group_by(OrthoGroup) %>%
     slice(1)
-  
+
   
 
     
@@ -218,7 +272,7 @@ for (i in col_order_singles){
     left_join( filtered_genes,join_by(OrthoGroup == OrthoGroup)) %>%
       select(species)
   
-  col_renamed <- as.character(paste0(i, "-expr"))
+  col_renamed <- as.character(paste0(i, " "))
   colnames(species_col) = col_renamed  
     # print(paste0("Length after joining: ",nrow(new_column)))
 
@@ -226,19 +280,51 @@ for (i in col_order_singles){
   
 }
 
-expr_pairs <- expr_pairs[, -c(1:7)]
-expr_pairs[is.na(expr_pairs)] <- 0
-expr_pairs[expr_pairs != 0] <-1
+expr_pairs_renamed_cols <- expr_pairs %>% 
+  select(-c(1:7)) 
 
-expr_pairs <- expr_pairs %>% 
+expr_pairs_renamed_cols[is.na(expr_pairs_renamed_cols)] <- 0
+expr_pairs_renamed_cols[expr_pairs_renamed_cols != 0] <-1
+
+expr_pairs_renamed_cols <- expr_pairs_renamed_cols %>% 
   mutate_if(is.character, as.integer)
 
 ```
 
 
+**All expressed genes - per species**
+
+1) not all expressed genes are in the ortholog-group-file.
+2) Only one gene per ortholog group was used.
+
+```{r fig.dim = c(15, 10)}
+# Plot upset plot. Using sets = rev(col_order) gives set order from top to bottom. Remember keep.order = T - if not the set order will be sorted by set size.
+
+col_order_singles <- c( "Asp ", "Birch ", "Cher ", "Nor ", "Scots ", "Lodge ")
+upset(expr_pairs_renamed_cols, 
+      sets = rev(col_order_singles),
+      nintersects = 10, 
+      keep.order = T, 
+      order.by = "freq",
+      decreasing = T,
+      set_size.show = T,
+      text.scale = c(4, 4, 0, 4, 4, 4),
+      set_size.scale_max = 17000,
+      sets.bar.color = "#f1a983",
+      matrix.color = "#f1a983",
+      point.size = 3,
+      line.size = 1
+      )
+
+
+
+```
+
+
+## Expressed (not p-value filtered)
 
 ```{r message=FALSE, warning=FALSE}
-# Co-expressed (not p-value filtered)
+
 
 comparison_pval <- data.frame(
   index = c(),
@@ -253,19 +339,20 @@ for (x in file_list_1){
   if (file.exists(x)){ 
     load(x) 
     
-    # Filter the comparison tables to just contain one gene pair for each ortholog group. 
-    
-    p_val_all <- comparison_table%>%
+
+     key_word_s1 <- sapply(strsplit(x, "_"), "[",1) 
+    key_word_s1 <- sapply(strsplit(key_word_s1, "-"), "[",2) 
+    key_word_s2 <- sapply(strsplit(x, "_"), "[",2)
+    key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1)
+   
+    # Filter the comparison tables to just contain one gene pair for each ortholog group.     
+     p_val_all <- comparison_table%>%
       select(Species1, Species2, OrthoGroup, Max.p.val) %>%
       mutate_at("Max.p.val", as.numeric) %>%
-      # filter(Max.p.val< 0.05) %>%  # only p-values under ...
+
       group_by(OrthoGroup) %>%
-      arrange(Max.p.val) %>% 
       slice(1) 
-    # ungroup() %>%
-    # distinct(Species1,  .keep_all = T) %>%
-    # distinct( Species2, .keep_all = T) %>%
-    # arrange(Max.p.val)
+
     
     comparison_pval <- rbind(comparison_pval, data.frame(
       index = 1:nrow(comparison_table),
@@ -274,14 +361,7 @@ for (x in file_list_1){
       
     ))
     
-    key_word_s1 <- sapply(strsplit(x, "_"), "[",1) 
-    key_word_s1 <- sapply(strsplit(key_word_s1, "-"), "[",2) 
-    key_word_s2 <- sapply(strsplit(x, "_"), "[",2)
-    key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1)
-    
-    # print(paste0("---------------- ", key_word_s1, "-", key_word_s2, " ----------------" ))
-    # print(paste0("Number of non-unique ortholog groups: ", nrow(p_val)-length(unique(p_val$OrthoGroup)))) 
-    # print(paste0("S1 duplicates: ", nrow(p_val)-length(unique(p_val$Species1)), " S2 duplicates: ",nrow(p_val)-length(unique(p_val$Species2)) ))
+
     
     new_col_name <-as.character(paste0(key_word_s1, "-", key_word_s2))
     
@@ -322,44 +402,57 @@ col_order <- c(  "Asp-Birch",  "Asp-Cher", "Birch-Cher",  "Lodge-Asp", "Lodge-Bi
 
 ones_and_zeros_all<- ones_and_zeros_all[, col_order]
 
+ones_and_zeros_all_saved <- save(ones_and_zeros_all, file = "Data/DATA/ones_and_zeros_all.RData")
+
+```
+
+
+**All expressed genes - no p-value filtering**
+
+```{r fig.dim = c(15, 10)}
+# Plot upset plot. Using sets = rev(col_order) gives set order from top to bottom. Remember keep.order = T - if not the set order will be sorted by set size.
+
+upset(ones_and_zeros_all, 
+      sets =  rev(col_order),
+      nintersects = 50,
+      keep.order = T, 
+      order.by = "freq",decreasing = T,
+      set_size.show = T,
+      text.scale = 1.5,
+      set_size.scale_max = 10000)
+
 ```
 
 
 
+## Co-expressologs
+
 ```{r message=FALSE, warning=FALSE}
-# Co-expressed, and significant
 
 ones_and_zeros <- ortho_general_filtering 
-
+pval <- 0.1
 
 for (x in file_list_1){
   if (file.exists(x)){ 
     load(x) 
     
-    # Filter the comparison tables to just contain one gene pair for each ortholog group. 
-    
+
     p_val <- comparison_table%>%
-    select(Species1, Species2, OrthoGroup, Max.p.val) %>%
-    mutate_at("Max.p.val", as.numeric) %>%
-    filter(Max.p.val< 0.05) %>%  # only p-values under ...
-    group_by(OrthoGroup) %>%
-    arrange(Max.p.val) %>% 
-    slice(1) 
-    # ungroup() %>%
-    # distinct(Species1,  .keep_all = T) %>%
-    # distinct( Species2, .keep_all = T) %>%
-    # arrange(Max.p.val)
+      select(Species1, Species2, OrthoGroup, Max.p.val) %>%
+      mutate_at("Max.p.val", as.numeric) %>%
+      filter(Max.p.val< pval) %>%  
+      group_by(OrthoGroup) %>%
+      arrange(Max.p.val) %>% 
+      slice(1) 
+
     
 
     key_word_s1 <- sapply(strsplit(x, "_"), "[",1) 
     key_word_s1 <- sapply(strsplit(key_word_s1, "-"), "[",2) 
     key_word_s2 <- sapply(strsplit(x, "_"), "[",2)
     key_word_s2 <- sapply(strsplit(key_word_s2, "-"), "[",1)
-    
-    # print(paste0("---------------- ", key_word_s1, "-", key_word_s2, " ----------------" ))
-    # print(paste0("Number of non-unique ortholog groups: ", nrow(p_val)-length(unique(p_val$OrthoGroup)))) 
-    # print(paste0("S1 duplicates: ", nrow(p_val)-length(unique(p_val$Species1)), " S2 duplicates: ",nrow(p_val)-length(unique(p_val$Species2)) ))
-    
+
+    # New name of column
     new_col_name <-as.character(paste0(key_word_s1, "-", key_word_s2))
     
 
@@ -375,7 +468,6 @@ for (x in file_list_1){
       left_join(p_val, join_by(OrthoGroup == OrthoGroup)) %>%
       select(new_col_name)
 
-    # print(paste0("Length after joining: ",nrow(new_column)))
 
     ones_and_zeros <- cbind(ones_and_zeros, new_column)
     
@@ -394,8 +486,7 @@ ones_and_zeros[ones_and_zeros != 0] <-1
 ones_and_zeros <- ones_and_zeros %>%
    mutate_if(is.character, as.integer)
 
-# Specify the order we want the output
-col_order <- c(  "Asp-Birch",  "Asp-Cher", "Birch-Cher",  "Lodge-Asp", "Lodge-Birch", "Lodge-Cher",  "Asp-Nor","Nor-Birch", "Nor-Cher", "Scots-Birch", "Scots-Cher",  "Asp-Scots" ,  "Lodge-Scots", "Lodge-Nor", "Nor-Scots")
+
 
 
 ones_and_zeros<- ones_and_zeros[, col_order]
@@ -405,90 +496,7 @@ ones_and_zeros<- ones_and_zeros[, col_order]
 
 
 
-# Plotting
-
-**All possible orthologs - per species**
-
-Based on sequence...all orthologs we "have"... not expressed genes.
-
-```{r fig.dim = c(15, 10)}
-# Plot upset plot. Using sets = rev(col_order) gives set order from top to bottom. Remember keep.order = T - if not the set order will be sorted by set size.
-
-upset(ortho_seq_all, 
-      sets = rev(col_order_singles),
-      nintersects = 20, 
-      keep.order = T, 
-      order.by = "freq",decreasing = T,
-      set_size.show = T,
-      text.scale = 1.5,
-      set_size.scale_max = 17000
-      )
-
-
-
-```
-
-**All possible orthologs - per pairs**
-
-```{r fig.dim = c(15, 10)}
-# Plot upset plot. Using sets = rev(col_order) gives set order from top to bottom. Remember keep.order = T - if not the set order will be sorted by set size.
-
-upset(ortho_seq_pairs, 
-      sets = rev(col_order),
-      nintersects = 20, 
-      keep.order = T, 
-      order.by = "freq",decreasing = T,
-      set_size.show = T,
-      text.scale = 1.5,
-      set_size.scale_max = 17000
-      )
-
-
-
-```
-
-**All expressed genes - per species**
-
-1) not all expressed genes are in the ortholog-group-file.
-2) Only one gene per ortholog group was used.
-
-```{r fig.dim = c(15, 10)}
-# Plot upset plot. Using sets = rev(col_order) gives set order from top to bottom. Remember keep.order = T - if not the set order will be sorted by set size.
-
-upset(expr_pairs, 
-      nsets = 6,
-      nintersects = 20, 
-      keep.order = T, 
-      order.by = "freq",decreasing = T,
-      set_size.show = T,
-      text.scale = 1.5,
-      set_size.scale_max = 17000
-      )
-
-
-
-```
-
-
-
-
-**All co-expressed genes - no p-value filtering**
-
-```{r fig.dim = c(15, 10)}
-# Plot upset plot. Using sets = rev(col_order) gives set order from top to bottom. Remember keep.order = T - if not the set order will be sorted by set size.
-
-upset(ones_and_zeros_all, 
-      sets =  rev(col_order),
-      nintersects = 50,
-      keep.order = T, 
-      order.by = "freq",decreasing = T,
-      set_size.show = T,
-      text.scale = 1.5,
-      set_size.scale_max = 10000)
-
-```
-
-**Co-expressed genes - p-value < 0.05**
+**Co-expressologs, p-value < 0.1**
 
 ```{r fig.dim = c(15, 10)}
 # Plot upset plot. Using sets = rev(col_order) gives set order from top to bottom. Remember keep.order = T - if not the set order will be sorted by set size.
@@ -503,6 +511,9 @@ upset(ones_and_zeros,
       set_size.scale_max = 7000)
 
 ```
+
+
+## P-value (FDR) distribution of ortholog pairs
 
 
 ```{r}
@@ -529,9 +540,9 @@ ggplot(comparison_pval,aes(x=max_pval, color=corr_pair, fill=corr_pair)) +
 pval_plot_2 <-ggplot(comparison_pval ,aes(x=index, y=max_pval, group=corr_pair, color=corr_pair)) +
     geom_line(linewidth = 1) +
     scale_color_manual(values = c(rainbow(15))) +
-    ggtitle("Dist. of max p-values - unfiltered") +
+    ggtitle("Distribution of max p-values for all expressed ortholog pairs") +
     ylab("Max p-value") +
-  xlim(-0.5, 20000) +
+  
     theme(
     legend.text = element_text(size = 14),
     legend.title = element_text(size = 20)
@@ -548,7 +559,7 @@ pval_plot_2
 # Definitions of 'conserved'
 
 
-*Complete sets*
+*Complete sets (fully conserved orthogroups)*
 
 ```{r}
 
@@ -572,7 +583,6 @@ angios_strict$Angiosperms[angios_strict$Angiosperms < 3] <- 0 # 1 and 2 are chan
 angios_strict$Angiosperms[angios_strict$Angiosperms == 3] <- 1 # 3 is changed to 1.
 
 
-
 # Now the same for gymnosperms.
 
 gymnos_strict<- df_with_sums %>% 
@@ -593,13 +603,6 @@ conserved_strict <- df_with_sums %>%
 conserved_strict$Conserved[conserved_strict$Conserved < 15] <- 0 # 1->9 are changed to 0.
 conserved_strict$Conserved[conserved_strict$Conserved == 15] <- 1 # 9 is changed to 1.
 
-
-
-```
-
-
-
-```{r}
 # The summary data frame contains the number of genes/ortholog groups that are completely present in each species group. That means
 # that there needs to be a n/n score for each gene for it to be included, where n = number of species in the species group.
 
@@ -614,9 +617,64 @@ summary_df <- rbind(summary_df, data.frame(
   Definition = rep("Strict", 3),
   Group = c(names(angios_strict)[16],names(conserved_strict)[19],names(gymnos_strict)[18]),
   Counts = c(sum(angios_strict$Angiosperms),sum(conserved_strict$Conserved), sum(gymnos_strict$Gymnosperms))
-  ))  
+  )) 
 
 ```
+
+
+
+
+*Partial sets 3 (Partially conserved orthogroups)*
+
+```{r}
+
+# Now we allow 2/3 pairs for clades, but still require pure clades.
+
+# Angiosperms
+angios_partial_1 <- df_with_sums %>% 
+  filter(Between == 0) %>% 
+  filter(Gymnosperms == 0) 
+
+# 2) Now we can add the 1's and 0's.
+angios_partial_1$Angiosperms[angios_partial_1$Angiosperms < 2] <- 0 # 1 and 2 are changed to 0.
+angios_partial_1$Angiosperms[angios_partial_1$Angiosperms >= 2] <- 1 # over 2 is changed to 1.
+
+
+
+# Gymnosperms
+gymnos_partial_1 <- df_with_sums %>% 
+  filter(Angiosperms == 0) %>% 
+  filter(Between == 0)
+
+# 2) Now we can add the 1's and 0's.
+gymnos_partial_1$Gymnosperms[gymnos_partial_1$Gymnosperms < 2] <- 0 # Even though we allow max 3 pairs between, we still want full clades.
+gymnos_partial_1$Gymnosperms[gymnos_partial_1$Gymnosperms >= 2] <- 1 # over 2 is changed to 1.
+
+
+
+# For the conserved groups we allow 1) 2/3 for clades, and 2) 2/9 for between pairs.
+
+conserved_partial_3 <- df_with_sums %>% 
+  filter(Angiosperms >= 2) %>% 
+  filter(Gymnosperms >= 2) %>% 
+  filter(Between >=2)
+
+conserved_partial_3$Conserved[conserved_partial_3$Conserved < 6] <- 0 # 1->9 are changed to 0.
+conserved_partial_3$Conserved[conserved_partial_3$Conserved >= 6] <- 1 # 9 is changed to 1.
+
+summary_df <- rbind(summary_df, data.frame(
+  Definition = rep("Partial 3", 3),
+  Group = c(names(angios_strict)[16],names(conserved_strict)[19],names(gymnos_strict)[18]),
+  Counts = c(sum(angios_partial_1$Angiosperms),sum(conserved_partial_3$Conserved), sum(gymnos_partial_1$Gymnosperms))
+  ))
+
+```
+
+
+
+-------------------------------- Extra: not included in thesis -----------------------------------------------
+
+
 
 
 *Partial set 1*
@@ -682,61 +740,6 @@ summary_df <- rbind(summary_df, data.frame(
   Definition = rep("Partial 2", 3),
   Group = c(names(angios_strict)[16],names(conserved_strict)[19],names(gymnos_strict)[18]),
   Counts = c(sum(angios_strict$Angiosperms),sum(conserved_partial_2$Conserved), sum(gymnos_strict$Gymnosperms))
-  ))  
-
-```
-
-
-*Partial sets 3*
-
-```{r}
-
-# Now we allow 2/3 pairs for clades, but still require pure clades.
-
-# Angiosperms
-angios_partial_1 <- df_with_sums %>% 
-  filter(Between == 0) %>% 
-  filter(Gymnosperms == 0) 
-
-# 2) Now we can add the 1's and 0's.
-angios_partial_1$Angiosperms[angios_partial_1$Angiosperms < 2] <- 0 # 1 and 2 are changed to 0.
-angios_partial_1$Angiosperms[angios_partial_1$Angiosperms >= 2] <- 1 # over 2 is changed to 1.
-
-
-
-# Gymnosperms
-gymnos_partial_1 <- df_with_sums %>% 
-  filter(Angiosperms == 0) %>% 
-  filter(Between == 0)
-
-# 2) Now we can add the 1's and 0's.
-gymnos_partial_1$Gymnosperms[gymnos_partial_1$Gymnosperms < 2] <- 0 # Even though we allow max 3 pairs between, we still want full clades.
-gymnos_partial_1$Gymnosperms[gymnos_partial_1$Gymnosperms >= 2] <- 1 # over 2 is changed to 1.
-
-
-
-# For the conserved groups we allow 1) 2/3 for clades, and 2) 2/9 for between pairs.
-
-conserved_partial_3 <- df_with_sums %>% 
-  filter(Angiosperms >= 2) %>% 
-  filter(Gymnosperms >= 2) %>% 
-  filter(Between >=2)
-
-conserved_partial_3$Conserved[conserved_partial_3$Conserved < 6] <- 0 # 1->9 are changed to 0.
-conserved_partial_3$Conserved[conserved_partial_3$Conserved >= 6] <- 1 # 9 is changed to 1.
-
-
-```
-
-
-
-```{r}
-
-
-summary_df <- rbind(summary_df, data.frame(
-  Definition = rep("Partial 3", 3),
-  Group = c(names(angios_strict)[16],names(conserved_strict)[19],names(gymnos_strict)[18]),
-  Counts = c(sum(angios_partial_1$Angiosperms),sum(conserved_partial_3$Conserved), sum(gymnos_partial_1$Gymnosperms))
   ))  
 
 ```
@@ -946,7 +949,7 @@ facet_plot_small <- ggplot( summary_df_filtered , aes(x= Counts, y=Group, fill =
   scale_fill_manual(values = palette_1)  + 
   theme_minimal()+
   theme(legend.position = "bottom", axis.text.y = element_blank(), axis.ticks.y = element_blank(), panel.background = element_rect(fill = "cornsilk"), plot.background = element_rect(fill = "white")) +
-  facet_wrap(~factor(Definition, levels = c("Ultra-conserved", "Partial 3")) , dir="h")  + labs(x = "", y = "") + ggtitle("Number of conserved genes per group based on definitions") + xlim(0,1500)
+  facet_wrap(~factor(Definition, levels = c("Ultra-conserved", "Partial 3")) , dir="h")  + labs(x = "", y = "") + ggtitle("Number of conserved genes per group based on definitions") + xlim(0,2500)
 
 facet_plot_small
 
