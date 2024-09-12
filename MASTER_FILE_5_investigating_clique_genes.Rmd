@@ -1,0 +1,969 @@
+---
+title: "Investigation of clique-genes (master file 4)"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(cowplot)
+
+# Ortholog group file
+ORTHOLOG_GROUP_FILE <- "Data/DATA/Orthogroups_20240823_clean.tsv" # Orthogroups.100323.tsv (older), Orthogroups_20240823_clean (newest)
+
+```
+
+
+# Conserved genes and differentiated genes
+
+```{r}
+# Gene set 
+path <- "Data/DATA/"
+file <- "conserved_genes_SUM_15.RData" 
+
+#"differentiated_genes_SUM_C-X_3-9.RData"
+#"conserved_genes_SUM_15.RData"
+
+
+
+load(paste0(path, file))
+
+
+gene_set <- conserved_genes %>% # One clique per orthogroup
+  ungroup() %>% 
+  group_by(OrthologGroup) %>% 
+  arrange(desc(NegLog10CliqueSum)) %>% 
+  slice(1:15)%>% 
+  ungroup()
+
+s1 <- gene_set %>% 
+  select(GeneSpecies1) %>% 
+  filter(grepl("Potra", GeneSpecies1)) %>% 
+  rename("Genes" = GeneSpecies1)
+  
+s2 <- gene_set %>% 
+  select(GeneSpecies2) %>% 
+  filter(grepl("Potra", GeneSpecies2)) %>% 
+  rename("Genes" = GeneSpecies2)
+
+gene_set_aspen <- rbind(s1,s2)
+gene_set_aspen <- gene_set_aspen %>% 
+  distinct(Genes)
+
+gene_set_file_name <- paste0(path,"aspen_set_",file)
+# save(gene_set_aspen, file = gene_set_file_name)
+
+# Expressed genes w/ annotation
+expressed_genes <- read_delim("Data/DATA/transcriptomicsData/AspWood_transcriptomics.txt")
+go_list_file <- read_delim("Data/DATA/Potra22_blast2go_GO.txt",'\t')
+
+go_list <- go_list_file %>% 
+  separate(`Sequence Name`,into = c("Sequence Name","Sequence Variant"), sep = "\\.") %>%
+  separate(`Annotation GO ID-Annotation GO Term`,into = c("GO ID","GO Term"), sep = "-", extra = "drop") %>%
+  filter(`Sequence Name` %in% expressed_genes$Genes)
+
+# save(go_list, file = "Data/DATA/go_list.RData")
+
+go_data_frame <- data.frame(go_id=go_list$`GO ID`, evidence=rep("ND", nrow(go_list)), 
+                            gene_id=go_list$`Sequence Name`)
+
+library(GSEABase)
+library(GOstats)
+library(gdata)
+
+go_frame_object = GOFrame(go_data_frame,organism="Aspen")
+go_all_frame_object = GOAllFrame(go_frame_object)
+
+
+gene_set_collection <- GeneSetCollection(go_all_frame_object, setType = GOCollection())
+universe <- expressed_genes$Genes
+
+gene_ID <- gene_set_aspen$Genes
+group_name <- "conserved_genes"
+pval_cutoff <- 0.05
+params <- GSEAGOHyperGParams(name="GSEA",
+                             geneSetCollection = gene_set_collection,
+                             geneIds = gene_ID,
+                             universeGeneIds = universe, 
+                             ontology = "BP",
+                             pvalueCutoff = pval_cutoff,
+                             conditional = FALSE,
+                             testDirection = "over")
+
+hyper_g_test <- hyperGTest(params)
+summary_table <- summary(hyper_g_test)
+summary_table <- summary_table[summary_table$Count>1,]
+summary_table <- summary_table[,c(1,2,5,6,7)]
+colnames(summary_table) <- c("GO id","P-value","x","n","GO term")
+
+rownames(summary_table) <- 1:nrow(summary_table)
+
+summary_table$`P-value`<- format(summary_table$`P-value`, digits=3, scientific=TRUE)
+
+# Save
+file_for_saving <- paste0(path,"SUMMARY_TBL_", file)
+save(summary_table, file = file_for_saving)
+
+```
+
+
+
+# Enhance and unique genes (angiosperm)
+
+```{r}
+# Gene set 
+path <- "Data/DATA/"
+file <- "enhanced_angiosperm_genes_SUM_T-NT-X_3-3-9.RData" 
+
+# "enhanced_angiosperm_genes_SUM_T-NT-X_3-3-9.RData"
+# "unique_angiosperm_genes_SUM_T_3.RData"
+
+
+load(paste0(path, file))
+gene_set <- conserved_genes_angio %>% # One clique per orthogroup
+  ungroup() %>% 
+  group_by(OrthologGroup) %>% 
+  arrange(desc(NegLog10CliqueSum)) %>% 
+  slice(1:15)%>% 
+  ungroup()
+
+s1 <- gene_set %>% 
+  select(GeneSpecies1) %>% 
+  filter(grepl("Potra", GeneSpecies1)) %>% 
+  rename("Genes" = GeneSpecies1)
+  
+s2 <- gene_set %>% 
+  select(GeneSpecies2) %>% 
+  filter(grepl("Potra", GeneSpecies2)) %>% 
+  rename("Genes" = GeneSpecies2)
+
+gene_set_aspen <- rbind(s1,s2)
+gene_set_aspen <- gene_set_aspen %>% 
+  distinct(Genes)
+
+# Expressed genes w/ annotation
+expressed_genes <- read_delim("Data/DATA/transcriptomicsData/AspWood_transcriptomics.txt")
+go_list_file <- read_delim("Data/DATA/Potra22_blast2go_GO.txt",'\t')
+
+go_list <- go_list_file %>% 
+  separate(`Sequence Name`,into = c("Sequence Name","Sequence Variant"), sep = "\\.") %>%
+  separate(`Annotation GO ID-Annotation GO Term`,into = c("GO ID","GO Term"), sep = "-", extra = "drop") %>%
+  filter(`Sequence Name` %in% expressed_genes$Genes)
+
+go_data_frame <- data.frame(go_id=go_list$`GO ID`, evidence=rep("ND", nrow(go_list)), 
+                            gene_id=go_list$`Sequence Name`)
+
+library(GSEABase)
+library(GOstats)
+library(gdata)
+
+go_frame_object = GOFrame(go_data_frame,organism="Aspen")
+go_all_frame_object = GOAllFrame(go_frame_object)
+
+
+gene_set_collection <- GeneSetCollection(go_all_frame_object, setType = GOCollection())
+universe <- expressed_genes$Genes
+
+gene_ID <- gene_set_aspen$Genes
+group_name <- "conserved_genes"
+pval_cutoff <- 0.05
+params <- GSEAGOHyperGParams(name="GSEA",
+                             geneSetCollection = gene_set_collection,
+                             geneIds = gene_ID,
+                             universeGeneIds = universe, 
+                             ontology = "BP",
+                             pvalueCutoff = pval_cutoff,
+                             conditional = FALSE,
+                             testDirection = "over")
+
+hyper_g_test <- hyperGTest(params)
+summary_table <- summary(hyper_g_test)
+summary_table <- summary_table[summary_table$Count>1,]
+summary_table <- summary_table[,c(1,2,5,6,7)]
+colnames(summary_table) <- c("GO id","P-value","x","n","GO term")
+
+rownames(summary_table) <- 1:nrow(summary_table)
+
+summary_table$`P-value`<- format(summary_table$`P-value`, digits=3, scientific=TRUE)
+
+# Save
+file_for_saving <- paste0(path,"SUMMARY_TBL_", file)
+save(summary_table, file = file_for_saving)
+
+```
+
+
+
+# Enhanced and unique genes - gymnosperms 
+
+```{r}
+
+library(tidyverse)
+
+# Gene set 
+path <- "Data/DATA/"
+file <- "unique_gymnosperm_genes_SUM_T_3.RData" 
+
+# "enhanced_gymnosperm_genes_SUM_T-NT-X_3-3-9.RData"
+# "unique_gymnosperm_genes_SUM_T_3.RData"
+
+load(paste0(path, file))
+gene_set <- conserved_genes_gymno %>% # One clique per orthogroup
+  ungroup() %>% 
+  group_by(OrthologGroup) %>% 
+  arrange(desc(NegLog10CliqueSum)) %>% 
+  slice(1:15)%>% 
+  ungroup()
+
+s1 <- gene_set %>% 
+  select(GeneSpecies1) %>% 
+  filter(grepl("PICAB", GeneSpecies1)) %>% 
+  rename("Genes" = GeneSpecies1)
+  
+s2 <- gene_set %>% 
+  select(GeneSpecies2) %>% 
+  filter(grepl("PICAB", GeneSpecies2)) %>% 
+  rename("Genes" = GeneSpecies2)
+
+gene_set_nor <- rbind(s1,s2)
+gene_set_nor <- gene_set_nor %>% 
+  distinct(Genes)
+
+# Expressed genes w/ annotation
+expressed_genes <- read_delim("Data/DATA/transcriptomicsData/NorWood_transcriptomics.txt")
+file_1_ori <- read_delim("Data/DATA/Picab02_230926_at01_longest_merged.tsv") %>% 
+  dplyr::select(id, eggnog_description, interpro_go) 
+
+file_1 <- file_1_ori%>% 
+  mutate(id = gsub("\\.\\mRNA\\.\\d+", "",id)) %>% 
+  mutate(id = sub("^(.*?_.*?_).*_(.*)$","\\1\\2" , id)) %>% 
+  dplyr::rename(ID = "id") 
+
+
+file_2_and_3 <-inner_join(read_delim("Data/DATA/ID_convert_oldtranscript2newGene.txt", col_names = FALSE),            
+  read_delim("Data/DATA/ID_TRANSLATION_TABLE_clean.txt", col_names = FALSE),by = "X1") %>%
+  dplyr::rename(ID = "X1", ID2 = "X2.x", ID3 = "X2.y")
+
+
+  
+go_list_file <- left_join(file_2_and_3, file_1, by = "ID") %>% 
+  dplyr::select(-c(ID, ID3)) %>% 
+  separate_rows("interpro_go", sep =  ",") %>% 
+  stats::na.omit(interpro_go) %>% 
+  dplyr::rename(`Sequence Name` = "ID2", `GO Term` = "eggnog_description", `GO ID` = "interpro_go") %>% 
+ filter(`Sequence Name` %in% expressed_genes$Genes)
+
+library(GSEABase)
+library(GOstats)
+library(gdata)
+
+go_list <- go_list_file
+
+go_data_frame <- data.frame(go_id=go_list$`GO ID`, evidence=rep("ND", nrow(go_list)), 
+                          gene_id=go_list$`Sequence Name`)
+go_frame_object=GOFrame(go_data_frame,organism="NorwaySpruce")
+go_all_frame_object=GOAllFrame(go_frame_object)
+
+gene_set_collection <- GeneSetCollection(go_all_frame_object, setType = GOCollection())
+universe <- expressed_genes$Genes
+
+gene_ID <- gene_set_nor$Genes
+group_name <- "conserved_genes"
+pval_cutoff <- 0.05
+params <- GSEAGOHyperGParams(name="GSEA",
+                             geneSetCollection = gene_set_collection,
+                             geneIds = gene_ID,
+                             universeGeneIds = universe, 
+                             ontology = "BP",
+                             pvalueCutoff = pval_cutoff,
+                             conditional = FALSE,
+                             testDirection = "over")
+
+hyper_g_test <- hyperGTest(params)
+summary_table <- summary(hyper_g_test)
+summary_table <- summary_table[summary_table$Count>1,]
+summary_table <- summary_table[,c(1,2,5,6,7)]
+colnames(summary_table) <- c("GO id","P-value","x","n","GO term")
+
+rownames(summary_table) <- 1:nrow(summary_table)
+
+summary_table$`P-value`<- format(summary_table$`P-value`, digits=3, scientific=TRUE)
+
+# Save
+file_for_saving <- paste0(path,"SUMMARY_TBL_", file)
+save(summary_table, file = file_for_saving)
+
+
+```
+
+
+# Visualising enriched GO terms - treemap
+
+**Step one: load (if needed) summary table - print unique GO IDs and paste in REVIGO**
+
+```{r}
+
+# Print out GO IDs for REVIGO
+
+load("Data/DATA/SUMMARY_TBL_conserved_genes_SUM_15.RData")
+
+df <- summary_table[,1]
+
+for (i in df){
+  cat(i, "\n")
+}
+
+
+```
+
+**Step 2: download R script in REVIGO for creating treemap, and copy the revigo.data terms to paste in chunk below**
+
+```{r}
+library(treemap) 								# treemap package by Martijn Tennekes
+library(RColorBrewer)
+
+# Set the working directory if necessary
+# setwd("C:/Users/username/workingdir");
+
+# --------------------------------------------------------------------------
+# Here is your data from Revigo. Scroll down for plot configuration options.
+
+revigo.names <- c("term_ID","description","frequency","uniqueness","dispensability","representative");
+revigo.data <- rbind(c("GO:0009308","amine metabolic process",0.6681544297041055,0.8447969951037613,0.05285956,"amine metabolic process"),
+c("GO:0006468","protein phosphorylation",1.0981791639505665,0.7374255721952713,0.25945168,"amine metabolic process"),
+c("GO:0006741","NADP biosynthetic process",0.047353192636385696,0.7336145800159041,0.38627295,"amine metabolic process"),
+c("GO:0008652","amino acid biosynthetic process",2.828030852968805,0.6673586485633433,0.1848328,"amine metabolic process"),
+c("GO:0009072","aromatic amino acid metabolic process",1.0963029989409447,0.6210276387666372,0.67549226,"amine metabolic process"),
+c("GO:0009095","aromatic amino acid family biosynthetic process, prephenate pathway",0.07732224252576221,0.6422630221624785,0.58306614,"amine metabolic process"),
+c("GO:0015969","guanosine tetraphosphate metabolic process",0.04812459675194236,0.731959242196612,0.44048933,"amine metabolic process"),
+c("GO:0016114","terpenoid biosynthetic process",0.27092263541289835,0.7735185173190801,0.1621244,"amine metabolic process"),
+c("GO:0016310","phosphorylation",1.4042282367682775,0.8059305929253874,0.53544516,"amine metabolic process"),
+c("GO:0034035","purine ribonucleoside bisphosphate metabolic process",0.05668718243462136,0.7294466730171685,0.65617429,"amine metabolic process"),
+c("GO:0034975","protein folding in endoplasmic reticulum",0.043438316749935604,0.8107559480891283,0.14840094,"amine metabolic process"),
+c("GO:0046394","carboxylic acid biosynthetic process",4.296222265990222,0.6013660842265655,0.26092588,"amine metabolic process"),
+c("GO:1902221","erythrose 4-phosphate/phosphoenolpyruvate family amino acid metabolic process",0.1696510501138,0.6608826476595117,0.54874844,"amine metabolic process"),
+c("GO:1902223","erythrose 4-phosphate/phosphoenolpyruvate family amino acid biosynthetic process",0.0772698972464923,0.626148229237426,0.58302785,"amine metabolic process"),
+c("GO:0015074","DNA integration",0.8292373841058298,0.8682165060882893,-0,"DNA integration"),
+c("GO:0043632","modification-dependent macromolecule catabolic process",1.120861199962631,0.8569731576023953,0.17907989,"DNA integration"),
+c("GO:0042221","response to chemical",4.002107916846052,0.9790972614598255,0,"response to chemical"),
+c("GO:0000160","phosphorelay signal transduction system",2.296618822805913,0.7427929485094591,0.43076909,"response to chemical"),
+c("GO:0043244","regulation of protein-containing complex disassembly",0.22716198194324796,0.8346866009290549,-0,"regulation of protein-containing complex disassembly"),
+c("GO:0006355","regulation of DNA-templated transcription",11.203551037625319,0.5875694788454888,0.49554645,"regulation of protein-containing complex disassembly"),
+c("GO:0019222","regulation of metabolic process",14.999611405176788,0.7016704624201705,0.38301414,"regulation of protein-containing complex disassembly"),
+c("GO:0048518","positive regulation of biological process",3.3726862387869874,0.7716616447913616,0.21366512,"regulation of protein-containing complex disassembly"));
+
+
+stuff <- data.frame(revigo.data);
+names(stuff) <- revigo.names;
+
+stuff$frequency <- as.numeric( as.character(stuff$frequency) );
+stuff$uniqueness <- as.numeric( as.character(stuff$uniqueness) );
+stuff$dispensability <- as.numeric( as.character(stuff$dispensability) );
+
+treemap(
+    fontsize.title = 20,
+  stuff,
+  index = c("representative","description"),
+  vSize = "uniqueness",
+  type = "categorical",
+  vColor = "representative",
+  algorithm = "pivotSize",
+  inflate.labels = T,      # set this to TRUE for space-filling group labels - good for posters
+  lowerbound.cex.labels = 0.4,   # try to draw as many labels as possible (still, some small squares may not get a label) - increase to get fewer
+  bg.labels = "#CCCCCC00",   # define background color of group labels
+  # "#CCCCCC00" is fully transparent, "#CCCCCCAA" is semi-transparent grey, NA is opaque
+  position.legend = "none",
+  palette = c("#F7FBFF", "#DEEBF7", "#C6DBEF", "#9ECAE1", "#6BAED6", "#4292C6", "#2171B5"),
+  fontsize.labels = c(10,0), # Set last number to 0 to hide children
+  border.col = c("black", "#CCCCCC00")
+)
+
+```
+
+
+
+# Expression profiles
+
+**Step 1: create data frame for looking up GO IDs/terms that actually are associated with genes in gene set (lower/higher order terms)**
+
+```{r}
+
+load("Data/DATA/go_list.RData")
+load("Data/DATA/SUMMARY_TBL_conserved_genes_SUM_15.RData")
+load("Data/DATA/conserved_genes_SUM_15.RData")
+#"differentiated_genes_SUM_C-X_3-9.RData"
+#"conserved_genes_SUM_15.RData"
+
+gene_set <- conserved_genes %>% # One clique per orthogroup
+  ungroup() %>% 
+  group_by(OrthologGroup) %>% 
+  arrange(desc(NegLog10CliqueSum)) %>% 
+  slice(1:15)%>% 
+  ungroup()
+
+s1 <- gene_set %>% 
+  select(GeneSpecies1, OrthologGroup) %>% 
+  rename("Genes" = GeneSpecies1)
+  
+s2 <- gene_set %>% 
+  select(GeneSpecies2, OrthologGroup) %>% 
+  rename("Genes" = GeneSpecies2)
+
+gene_set <- rbind(s1,s2)
+gene_set <- gene_set %>% 
+  distinct(Genes, .keep_all = T)
+
+genes <- gene_set
+
+
+ortholog_group_file <- read.delim(ORTHOLOG_GROUP_FILE, header = TRUE, sep = "\t")%>% 
+  mutate(Pinus_sylvestris_cp = Pinus_sylvestris) %>% 
+  rename(
+    Asp = Populus_tremula,
+    Birch = Betula_pendula,
+    Nor = Picea_abies,
+    Scots = Pinus_sylvestris,
+    Cher = Prunus_avium,
+    Lodge = Pinus_sylvestris_cp)
+
+
+species_list <- c( "Asp","Lodge","Birch","Nor","Cher", "Scots")
+file_list_2 <- c()
+for (i in species_list){
+
+  expr_name <- paste0("Data/DATA/transcriptomicsData/",i,"Wood_transcriptomics.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+
+}
+
+
+look_up_GO <- go_list %>% 
+  filter(`GO ID` %in% summary_table$`GO id`) %>% 
+  filter(`Sequence Name` %in% genes$Genes) %>% 
+  left_join(summary_table, join_by(`GO ID` == `GO id`)) %>% 
+  select(-c(4:7))
+
+length(unique(look_up_GO$`GO ID`))
+
+```
+
+**Step 2: enter the GO ID and run code - gives the expression profiles for all genes associated with the GO ID for all six species**
+
+Note! Check how many genes are present for each GO term. Looking only at max five curves.
+
+```{r}
+
+
+GO_ID <- "GO:0007018" # For search by gene name set GO_ID = " ". Else:  "GO:0000902"
+GO <- "Microtub move (GO 0007018)" 
+
+# OR
+
+gene_name <- "Potra2n12c24030" # Set GO_ID to " "!
+
+palette_1 <- c("#440154FF","black","#35B779FF", "#fc8d59","#FDE725FF")
+linethickness <- 1.5
+
+if(!(GO_ID == " ")){
+  
+  print("Search by GO_ID!")
+  
+  GO_terms_to_genes <-go_list %>% 
+  filter(`Sequence Name` %in% genes$Genes) %>% 
+  filter(`GO ID` %in% GO_ID) %>% 
+  group_by(`Sequence Name`) %>% 
+  slice(1)
+
+
+genes_to_plot <- unique(GO_terms_to_genes$`Sequence Name`)[1:5]
+
+ortholog_groups <- ortholog_group_file %>%  
+  filter(OrthoGroup %in% genes$OrthologGroup) %>% 
+  select(OrthoGroup, all_of(species_list)) %>% 
+  separate_rows(Asp, sep = ", ") %>%
+  # mutate(Asp = gsub("Poptre_", "", Asp)) %>%
+  # mutate(Asp = gsub("\\.\\d\\.p\\d$", "", Asp)) %>% 
+  filter(Asp %in% genes_to_plot) %>% 
+  separate_rows(Birch, sep = ", ") %>%
+  separate_rows(Cher, sep = ", ") %>% 
+  separate_rows(Nor, sep = ", ") %>% 
+  separate_rows(Lodge, sep = ", ") %>% 
+  separate_rows(Scots, sep = ", ") %>% 
+  filter(Birch %in% genes$Genes) %>%
+  filter(Nor %in% genes$Genes) %>%
+  filter(Scots %in% genes$Genes) %>%
+  filter(Lodge %in% genes$Genes) %>% 
+  distinct(OrthoGroup, .keep_all = T)
+
+length(unique(ortholog_groups$OrthoGroup))
+length(unique(ortholog_groups$Asp))
+
+unique(ortholog_groups$Asp)
+unique_OG<-c(unique(ortholog_groups$OrthoGroup))
+
+df_species_name_and_sections <- data.frame(
+  short = c(rep("Asp",2), rep("Lodge", 3),rep("Birch", 3), rep("Nor", 2), rep("Cher", 2), rep("Scots", 3)),
+  long = c(rep("Aspen", 2),  rep("Lodgepole Pine", 3),  rep("Birch",3),rep("Norway Spruce", 2), rep("Cherry",2) ,rep("Scots Pine",3)),
+  sections = c(5,12,
+               5,12,25,
+               5,14,23,
+               5,13,
+               4,11,
+               6,15,27)
+)
+
+
+expression_all_longer <- data.frame() 
+plots <- list()
+
+# For all species
+for(x in 1:length(file_list_2)){
+  # x <- 6
+  
+  
+  species <- sapply(strsplit(file_list_2[x], "transcriptomicsData/transcriptomicsForHeatmaps/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[", 1)  
+  
+  
+  
+  # expressologs <- expressologs_sign %>% 
+  #   filter(OrthologGroup == og)
+  
+  filtering_vector <- ortholog_groups %>%
+    filter(OrthoGroup %in% unique_OG) %>%
+    rename(Species = species) 
+  
+  
+  expression_vector <- read_delim(file_list_2[x], show_col_types = FALSE)  %>% 
+    select(Genes, contains("1.")) %>% 
+    filter(Genes %in% filtering_vector$Species)
+  
+  
+  if(nrow(expression_vector) > 0){
+    
+    gene_order <- unique(filtering_vector$Species)
+    
+    samples <- colnames(expression_vector)[-1]
+    
+    expression_vector_t <- t(expression_vector) 
+    colnames(expression_vector_t) <- expression_vector_t[1,]
+    
+    expression_vector_t <- expression_vector_t[-1, ,drop = F] %>% 
+      as.data.frame() %>%
+      mutate(Samples = samples)
+    
+    # expression_vector_t <- expression_vector_t[gene_order]
+    
+    
+    longer <- expression_vector_t %>% 
+      pivot_longer(-Samples,names_to = "Genes", values_to = "Expression") %>% 
+      mutate_at("Expression", as.numeric) %>% 
+      mutate(Samples = gsub("^(.+?).", "", Samples)) %>% 
+      mutate(Genes = factor(Genes, levels =  gene_order))
+      
+      
+    
+    
+    
+    longer_end <- longer %>% 
+      mutate(Species = rep(species, nrow(longer))) %>% 
+      group_by(Genes)
+    
+
+    
+    
+    expression_all_longer <- rbind(expression_all_longer,longer_end)
+    
+    
+      cat("Order in cliques: ", gene_order)
+  cat("\n")
+   cat("Plotting order: ", unique(longer_end$Genes))
+  cat("\n")
+  
+  
+  } 
+  
+}
+
+
+expression_all_longer <- expression_all_longer %>% 
+  group_by(Genes, Species) 
+
+
+
+for(q in 1:length(unique(expression_all_longer$Species))){
+  
+  # q <- 6
+  species <- unique(expression_all_longer$Species)[q]
+  
+  
+  df <- expression_all_longer %>% 
+    filter(Species == species)
+
+  name_long <- df_species_name_and_sections %>% 
+    filter(short == species) %>% 
+    select(long) %>% 
+    slice(1)
+  
+  name_long_vect <- c(name_long)  
+  sub_title <- paste0(name_long_vect)
+  
+  sections_df <- df_species_name_and_sections %>% 
+    filter(short == species)
+  
+  species_sections <- sections_df$sections
+  
+ 
+  
+  plots[[length(plots)+1]]  <- 
+    ggplot(data = df, aes(x = Samples, y = Expression, group = Genes, col = Genes)) +
+    geom_line(linewidth = linethickness, show.legend = T) + scale_color_manual(values = palette_1) +
+    labs(title = sub_title, y = "Expression (VST)", x = " ") + 
+    geom_vline(xintercept = species_sections, linetype = "dashed", color = "black", linewidth = 0.7)   + 
+    theme_minimal() +
+    theme(axis.ticks.x = element_blank(), axis.text.x.bottom  = element_blank(), legend.text=element_text(size = 10))
+  
+  
+  
+}
+
+title <- paste0(GO)
+
+
+plot_title <- ggdraw() + draw_label(title, fontface = "italic", size = 20, hjust = 0, vjust = 1)
+print(plot_grid(plot_title,NULL, plotlist = plots, ncol = 2, nrow = 4))
+
+  
+} else{ 
+  
+  GO <- " "
+  print("Search by gene") 
+
+  ortholog_groups <- ortholog_group_file %>%  
+  filter(OrthoGroup %in% genes$OrthologGroup) %>% 
+  select(OrthoGroup, all_of(species_list)) %>% 
+  separate_rows(Asp, sep = ", ") %>%
+  mutate(Asp = gsub("Poptre_", "", Asp)) %>%
+  mutate(Asp = gsub("\\.\\d\\.p\\d$", "", Asp)) %>% 
+  filter(Asp %in% gene_name) %>% 
+  separate_rows(Birch, sep = ", ") %>%
+  separate_rows(Cher, sep = ", ") %>% 
+  separate_rows(Nor, sep = ", ") %>% 
+  separate_rows(Lodge, sep = ", ") %>% 
+  separate_rows(Scots, sep = ", ") %>% 
+  mutate(Birch = gsub("Betpen_", "", Birch)) %>%
+  mutate(Cher = gsub("Prunavi_", "", Cher)) %>%
+  mutate(Nor = gsub("\\.p\\d$", "", Nor)) %>%
+  mutate(Cher = gsub("\\.p\\d$", "", Cher)) %>% 
+  filter(Cher %in% genes$Genes) %>%
+  filter(Birch %in% genes$Genes) %>%
+  filter(Nor %in% genes$Genes) %>%
+  filter(Scots %in% genes$Genes) %>%
+  filter(Lodge %in% genes$Genes) %>% 
+  distinct(OrthoGroup, .keep_all = T)
+  
+  length(unique(ortholog_groups$Asp))
+  length(unique(ortholog_groups$OrthoGroup))
+  
+  unique_OG<-c(unique(ortholog_groups$OrthoGroup))
+
+  expression_all_longer <- data.frame() 
+  plots <- list()
+  
+  for(x in 1:length(file_list_2)){
+    # x <- 6
+    
+    
+    species <- sapply(strsplit(file_list_2[x], "transcriptomicsData/transcriptomicsForHeatmaps/"), "[",2)
+    species <- sapply(strsplit(species, "Wood"), "[", 1)  
+    
+    
+    
+    # expressologs <- expressologs_sign %>% 
+    #   filter(OrthologGroup == og)
+    
+    filtering_vector <- ortholog_groups %>%
+      filter(OrthoGroup %in% unique_OG) %>%
+      rename(Species = species) 
+    
+    
+    expression_vector <- read_delim(file_list_2[x], show_col_types = FALSE)  %>% 
+      select(Genes, contains("1.")) %>% 
+      filter(Genes %in% filtering_vector$Species)
+    
+    if(nrow(expression_vector) > 0){
+      
+      gene_order <- unique(filtering_vector$Species)
+      
+      samples <- colnames(expression_vector)[-1]
+      
+      expression_vector_t <- t(expression_vector) 
+      colnames(expression_vector_t) <- expression_vector_t[1,]
+      
+      expression_vector_t <- expression_vector_t[-1, ,drop = F] %>% 
+        as.data.frame() %>%
+        mutate(Samples = samples)
+      
+      # expression_vector_t <- expression_vector_t[gene_order]
+      
+      
+      longer <- expression_vector_t %>% 
+        pivot_longer(-Samples,names_to = "Genes", values_to = "Expression") %>% 
+        mutate_at("Expression", as.numeric) %>% 
+        mutate(Samples = gsub("^(.+?).", "", Samples)) %>% 
+        mutate(Genes = factor(Genes, levels =  gene_order))
+      
+      
+      
+      
+      
+      longer_end <- longer %>% 
+        mutate(Species = rep(species, nrow(longer))) %>% 
+        group_by(Genes)
+      
+      
+      
+      
+      expression_all_longer <- rbind(expression_all_longer,longer_end)
+      
+      
+      cat("Order in cliques: ", gene_order)
+      cat("\n")
+      cat("Plotting order: ", unique(longer_end$Genes))
+      cat("\n")
+      
+      
+    } 
+    
+  }
+  
+  
+  expression_all_longer <- expression_all_longer %>% 
+    group_by(Genes, Species) 
+  
+  
+  
+  for(q in 1:length(unique(expression_all_longer$Species))){
+    
+    # q <- 6
+    species <- unique(expression_all_longer$Species)[q]
+    
+    
+    df <- expression_all_longer %>% 
+      filter(Species == species)
+    
+
+    name_long <- df_species_name_and_sections %>% 
+      filter(short == species) %>% 
+      select(long) %>% 
+      slice(1)
+    
+    name_long_vect <- c(name_long)  
+    sub_title <- paste0(name_long_vect, " - ", unique(df$Genes))
+    
+    sections_df <- df_species_name_and_sections %>% 
+      filter(short == species)
+    
+    species_sections <- sections_df$sections
+    
+    
+    
+    plots[[length(plots)+1]]  <- 
+      ggplot(data = df, aes(x = Samples, y = Expression, group = Genes, col = Genes)) +
+      geom_line(linewidth = linethickness, show.legend = F) + scale_color_manual(values = palette_1) +
+      labs(title = sub_title, y = "Expression (VST)", x = " ") + 
+      geom_vline(xintercept = species_sections, linetype = "dashed", color = "black", linewidth = 0.7) +
+      theme_minimal() +
+      theme(axis.ticks.x = element_blank(), axis.text.x.bottom  = element_blank(), legend.text=element_text(size = 10))
+    
+    
+    
+  }
+  
+  title <- paste0(GO, " ",unique_OG)
+  
+  
+  plot_title <- ggdraw() + draw_label(title, fontface = "italic", size = 20, hjust = 0, vjust = 1)
+  print(plot_grid(plot_title,NULL, plotlist = plots, ncol = 2, nrow = 4))
+  
+  
+  
+  
+}
+
+
+
+```
+
+
+
+
+
+
+
+
+```{r}
+
+GO_ID <- c("")
+GO <- c("Phloem: ")
+
+unique_OG<-c(unique(ortholog_groups$OrthoGroup))
+# palette_1 <- RColorBrewer::brewer.pal(name = "Dark2", n = 8)
+# palette_1 <- RColorBrewer::brewer.pal(name = "PRGn", n =11)[c(1:2,8:10)]
+palette_1 <- c("#3D5A71","#FFB000","#785EF0", "#DC267F","#FE6100")
+linethickness <- 1.5
+
+expression_all_longer <- data.frame() 
+plots <- list()
+
+# For all species
+for(x in 1:length(file_list_2)){
+  # x <- 6
+  
+  
+  species <- sapply(strsplit(file_list_2[x], "transcriptomicsData/transcriptomicsForHeatmaps/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[", 1)  
+  
+  
+  
+  # expressologs <- expressologs_sign %>% 
+  #   filter(OrthologGroup == og)
+  
+  filtering_vector <- ortholog_groups %>%
+    filter(OrthoGroup %in% unique_OG) %>%
+    rename(Species = species) 
+  
+  
+  expression_vector <- read_delim(file_list_2[x], show_col_types = FALSE)  %>% 
+    select(Genes, contains("1.")) %>% 
+    filter(Genes %in% filtering_vector$Species)
+  
+  if(nrow(expression_vector) > 0){
+    
+    gene_order <- unique(filtering_vector$Species)
+    
+    samples <- colnames(expression_vector)[-1]
+    
+    expression_vector_t <- t(expression_vector) 
+    colnames(expression_vector_t) <- expression_vector_t[1,]
+    
+    expression_vector_t <- expression_vector_t[-1, ,drop = F] %>% 
+      as.data.frame() %>%
+      mutate(Samples = samples)
+    
+    # expression_vector_t <- expression_vector_t[gene_order]
+    
+    
+    longer <- expression_vector_t %>% 
+      pivot_longer(-Samples,names_to = "Genes", values_to = "Expression") %>% 
+      mutate_at("Expression", as.numeric) %>% 
+      mutate(Samples = gsub("^(.+?).", "", Samples)) %>% 
+      mutate(Genes = factor(Genes, levels =  gene_order))
+      
+      
+    
+    
+    
+    longer_end <- longer %>% 
+      mutate(Species = rep(species, nrow(longer))) %>% 
+      group_by(Genes)
+    
+
+    
+    
+    expression_all_longer <- rbind(expression_all_longer,longer_end)
+    
+    
+      cat("Order in cliques: ", gene_order)
+  cat("\n")
+   cat("Plotting order: ", unique(longer_end$Genes))
+  cat("\n")
+  
+  
+  } 
+  
+}
+
+
+expression_all_longer <- expression_all_longer %>% 
+  group_by(Genes, Species) 
+
+
+
+for(q in 1:length(unique(expression_all_longer$Species))){
+  
+  # q <- 6
+  species <- unique(expression_all_longer$Species)[q]
+  
+  
+  df <- expression_all_longer %>% 
+    filter(Species == species)
+  
+  
+  # if(length(unique(df$Genes))>2){
+  #   
+  #   linethickness <- 1.5
+  #   
+  # } else{
+  #   linethickness <- 2.5
+  # }
+  # 
+  name_long <- df_species_name_and_sections %>% 
+    filter(short == species) %>% 
+    select(long) %>% 
+    slice(1)
+  
+  name_long_vect <- c(name_long)  
+  sub_title <- paste0(name_long_vect, " - ", unique(df$Genes))
+  
+  sections_df <- df_species_name_and_sections %>% 
+    filter(short == species)
+  
+  species_sections <- sections_df$sections
+  
+ 
+  
+  plots[[length(plots)+1]]  <- 
+    ggplot(data = df, aes(x = Samples, y = Expression, group = Genes, col = Genes)) +
+    geom_line(linewidth = linethickness, show.legend = F) + scale_color_manual(values = palette_1) +
+    labs(title = sub_title, y = "Expression (VST)", x = " ") + 
+    geom_vline(xintercept = species_sections, linetype = "dashed", color = "black", linewidth = 0.7) +
+    theme_minimal() +
+    theme(axis.ticks.x = element_blank(), axis.text.x.bottom  = element_blank(), legend.text=element_text(size = 10))
+  
+  
+  
+}
+
+title <- paste0(GO, " ",unique_OG)
+
+
+plot_title <- ggdraw() + draw_label(title, fontface = "italic", size = 20, hjust = 0, vjust = 1)
+print(plot_grid(plot_title,NULL, plotlist = plots, ncol = 2, nrow = 4))
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

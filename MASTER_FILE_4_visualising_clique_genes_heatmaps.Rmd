@@ -1,0 +1,935 @@
+---
+title: "Heatmaps - conserved genes (master file 4)"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(ComplexHeatmap)
+library(gplots)
+library(cowplot)
+library(circlize)
+library(gdata)
+
+```
+
+# Conserved and differentiated genes
+
+
+```{r}
+
+
+species_list <- c("Cher", "Asp", "Birch", "Nor", "Scots", "Lodge") 
+# Change this based on which set that is to be used: "Cher", "Asp", "Birch", "Nor", "Scots", "Lodge"
+
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/",i,"Wood_transcriptomics.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+  
+}
+
+load("Data/DATA/differentiated_genes_SUM_C-X_3-9.RData") 
+# Data/DATA/conserved_genes_SUM_15.RData
+# Data/DATA/differentiated_genes_SUM_C-X_3-9.RData
+# Data/DATA/conserved_genes_PVAL_0.1.RData
+
+conserved_genes_one_clique_pr_OG <- conserved_genes %>% # One clique per orthogroup
+  ungroup() %>% 
+  group_by(OrthologGroup) %>% 
+  arrange(desc(NegLog10CliqueSum)) %>% 
+  slice(1:15)%>% 
+  ungroup() 
+
+s1 <- conserved_genes_one_clique_pr_OG %>% 
+  select(OrthologGroup, GeneSpecies1 ,Species1, UGeneSpecies1) %>% 
+  rename("UGenes" = UGeneSpecies1, "Genes" = GeneSpecies1 ,"Species" = Species1)
+  
+s2 <- conserved_genes_one_clique_pr_OG %>% 
+  select(OrthologGroup, GeneSpecies2,Species2, UGeneSpecies2) %>% 
+  rename("UGenes" = UGeneSpecies2, "Genes" = GeneSpecies2,"Species" = Species2)
+
+gene_set_combined <- rbind(s1,s2)
+gene_set <- gene_set_combined %>% 
+  distinct(UGenes, .keep_all = T) %>% 
+  group_by(OrthologGroup) %>% 
+  mutate(Members = n()) %>% 
+  filter(Members == 6)
+ 
+length(unique(gene_set$OrthologGroup))
+
+```
+
+**Method 1: Individual heatmaps with sample annotation bars**
+
+
+```{r}
+
+combined_expression_data <- gene_set %>% 
+  select(OrthologGroup) %>% 
+  group_by(OrthologGroup) %>% 
+  slice(1)
+
+col_function_1 <- colorRamp2(c(-3, 0 ,3), c("#0571b0", "#f7f7f7","#ca0020" ))
+species_lat_name <- c("Populus tremula", "Betula pendula","Prunus avium" , "Picea abies", "Pinus sylvestris", "Pinus contorta")
+
+for (i in 1:length(file_list_2)){
+  
+  # i <- 1
+
+  x <- read_delim(file_list_2[i], show_col_types = FALSE) %>% 
+    select(Genes, contains("1."))
+  
+  species <- sapply(strsplit(file_list_2[i], "transcriptomicsData/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[", 1)  
+  
+  conserved_genes_one_species <- gene_set[,-4] %>% 
+    filter(Species == species)
+
+  
+  expr <- x %>% 
+    filter(Genes %in% conserved_genes_one_species$Genes)
+
+    print(paste0(species, ": ", nrow(expr), " genes."))
+
+  
+  scaled_data <- t(scale(t(expr[,-1]), center = T, scale = T))
+  scaled_data[is.nan(scaled_data)] <-0 #Lodge had a few rows with NaNs which became an issue when running Lodge on the clade-specific genes.
+  
+   scaled_data_with_genes <- cbind(Genes = expr$Genes, scaled_data)
+
+  aligning_genes <- gene_set %>%
+    left_join(as.data.frame(scaled_data_with_genes), by = "Genes") %>%
+    na.omit() %>%
+    distinct(Genes, .keep_all = T) # Necessary as Lodge and Scots share the same genome...
+
+  combined_expression_data <- cbind(combined_expression_data, aligning_genes[, -c(1:5)])
+
+    
+  
+}
+
+# This may change!
+sample_clustering <- c(rep("1", 5),rep("2", 5), rep("3",9), rep("4",6), # aspen
+                       rep("1",4),rep("2", 8), rep("3",10), rep("4",6), # birch
+                       rep("1",7),rep("2", 8), rep("3",3), rep("4",9),  # cherry
+                       rep("1",5),rep("2", 7), rep("3",5), rep("4",10), # norway spruce
+                       rep("1",6),rep("2", 8), rep("3",7), rep("4",7),  # scots pine
+                       rep("1",7),rep("2",6), rep("3",10), rep("4",4))  # lodgepole pine
+
+
+  ha = HeatmapAnnotation(
+    Samples = sample_clustering,
+    na_col = "white",
+    col = list(Samples = c("1" = "#FFB000", "2" = "#DC267F","3" = "#3D5A71",  "4" = "#FE6100")),
+    simple_anno_size = unit(0.8, "cm"),
+    show_legend = F,
+    show_annotation_name = F
+  )
+  
+
+combined_expression_matrix <- combined_expression_data %>% 
+  ungroup() %>% 
+  select(-1) %>% 
+  select(c(contains("A"), contains("B"), contains("C"), contains("N"), contains("S"), contains("L")))%>%
+  mutate_if(is.character, as.numeric) %>% 
+  as.matrix()
+
+print(nrow(combined_expression_matrix))
+
+column_split <- rep("A", 162)
+column_split[26:53] <- "B"
+column_split[54:80] <- "C"
+column_split[81:107] <- "N"
+column_split[108:135] <- "S"
+column_split[136:162] <- "L"
+
+column_split <- factor(column_split, levels = c("A", "B", "C", "N", "S", "L"))
+
+ht_opt$TITLE_PADDING = unit(c(30, 10), "points")
+ht_opt$message = FALSE
+ 
+
+
+Heatmap(combined_expression_matrix,
+                 show_column_names = FALSE,
+                 cluster_rows = TRUE,
+                 show_row_dend = FALSE,
+                 column_title =   species_lat_name,
+                 column_title_side = "bottom",
+                 show_column_dend = FALSE,
+                 column_dend_height = unit(20, "mm"),
+                 column_title_gp = gpar(fontsize = 18, fontface = "italic"  ,fill = "white", border = "white" ),
+                 clustering_distance_rows = "euclidean",
+                 clustering_method_rows = "ward.D2",
+                 show_row_names = FALSE,
+                 heatmap_width = unit(45, "cm"),
+                 heatmap_height = unit(18, "cm"),
+                 column_order = 1:ncol(combined_expression_matrix),
+                 top_annotation = ha,
+                 show_heatmap_legend = F,
+                 col = col_function_1,
+                 column_split = column_split
+  )
+```
+
+
+**Method 2: All species in one heatmap**
+
+```{r eval=FALSE, include=FALSE}
+
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+species_full_name <- c("Cherry", "Aspen","Birch","Norway spruce","Scots pine",  "Lodgepole pine")
+species_lat_name <- c("Prunus avium","Populus tremula", "Betula pendula", "Picea abies", "Pinus sylvestris", "Pinus contorta" )
+
+
+col_function_1 <- colorRamp2(c(-3, 0 ,3), c("#0571b0", "#f7f7f7","#ca0020" ))
+
+# Loop
+
+combined_expression_data <- gene_set %>% 
+  select(OrthologGroup) %>% 
+  group_by(OrthologGroup) %>% 
+  slice(1)
+
+for (i in 1:length(file_list_2)){
+  
+  # i <- 1
+
+  x <- read_delim(file_list_2[i], show_col_types = FALSE) %>% 
+    select(Genes, contains("1."))
+  
+  species <- sapply(strsplit(file_list_2[i], "transcriptomicsData/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[", 1)  
+  
+  conserved_genes_one_species <- gene_set[,-4] %>% 
+    filter(Species == species)
+
+  
+  expr <- x %>% 
+    filter(Genes %in% conserved_genes_one_species$Genes)
+
+    print(paste0(species, ": ", nrow(expr), " genes."))
+
+  
+  scaled_data <- t(scale(t(expr[,-1]), center = T, scale = T))
+  scaled_data[is.nan(scaled_data)] <-0 #Lodge had a few rows with NaNs which became an issue when running Lodge on the clade-specific genes.
+  
+   scaled_data_with_genes <- cbind(Genes = expr$Genes, scaled_data)
+
+  aligning_genes <- gene_set %>%
+    left_join(as.data.frame(scaled_data_with_genes), by = "Genes") %>%
+    na.omit() %>%
+    distinct(Genes, .keep_all = T) # Necessary as Lodge and Scots share the same genome...
+
+  combined_expression_data <- cbind(combined_expression_data, aligning_genes[, -c(1:5)])
+
+    
+  
+}
+
+
+combined_expression_matrix <- combined_expression_data %>%
+  ungroup() %>%
+  select(-1) %>%
+  select(c(contains("A"), contains("B"), contains("C"), contains("S"), contains("T"), contains("L"))) %>%
+  mutate_if(is.character, as.numeric) %>%
+  as.matrix()
+
+column_split <- rep("A", 162)
+column_split[26:53] <- "B"
+column_split[54:80] <- "C"
+column_split[81:107] <- "S"
+column_split[108:135] <- "T"
+column_split[136:162] <- "L"
+
+
+
+
+
+hm <-  Heatmap(combined_expression_matrix, show_column_names = TRUE,
+               cluster_rows = TRUE,
+               show_row_dend = FALSE,
+               clustering_distance_rows = "euclidean",
+               clustering_method_rows = "ward.D2",
+               show_row_names = FALSE,
+               column_order = 1:ncol(combined_expression_matrix),
+               column_title_gp = gpar(fontsize = 15),
+               column_names_gp = gpar(fontsize = 7),
+               show_heatmap_legend = FALSE,
+               col =  c("#08306b", "#f7f7f7","#de2d26"),
+               column_split = column_split,
+               column_title = c("Aspen", "Birch", "Cherry", "Scots Pine", "Norway Spruce", "Lodgepole Pine"),
+               column_title_side = ("bottom"),
+               heatmap_width = unit(40, "cm"),
+               heatmap_height = unit(14, "cm")
+)
+
+hm
+
+```
+
+# Enhanced genes
+
+
+
+```{r}
+
+clade <- "Gymno" # "Gymno"
+load("Data/DATA/enhanced_gymnosperm_genes_SUM_T-NT-X_3-3-6.RData") 
+
+# Data/DATA/enhanced_angiosperm_genes_SUM_T-NT-X_3-3-9.RData
+# Data/DATA/enhanced_angiosperm_genes_SUM_T-NT-X_3-3-6.RData
+
+# Data/DATA/enhanced_gymnosperm_genes_SUM_T-NT-X_3-3-9.RData
+# Data/DATA/enhanced_gymnosperm_genes_SUM_T-NT-X_3-3-6.RData
+
+
+
+if(clade == "Angio"){
+  
+  species_list <- c("Cher", "Asp", "Birch")
+  species_lat_name <- c("Populus tremula", "Betula pendula","Prunus avium" )
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/",i,"Wood_transcriptomic.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+  
+}
+
+conserved_genes_one_clique_pr_OG <- conserved_genes_angio %>% # One clique per orthogroup
+  ungroup() %>% 
+  group_by(OrthologGroup) %>% 
+  slice_max(order_by = AngioSum, n = 15) %>% 
+  ungroup() %>% 
+  group_by(cliqueID) %>% 
+  filter(sum(Angio) == 3) %>% 
+  ungroup() %>% 
+  group_by(OrthologGroup) %>% 
+  slice_min(order_by = CrossSum) %>% 
+  ungroup()
+
+length(unique(conserved_genes_angio$OrthologGroup))  
+length(unique(conserved_genes_one_clique_pr_OG$OrthologGroup)) 
+length(unique(conserved_genes_one_clique_pr_OG$cliqueID)) 
+ 
+s1 <- conserved_genes_one_clique_pr_OG %>% 
+  select(OrthologGroup, GeneSpecies1 ,Species1, UGeneSpecies1) %>% 
+  rename("UGenes" = UGeneSpecies1, "Genes" = GeneSpecies1 ,"Species" = Species1)
+  
+s2 <- conserved_genes_one_clique_pr_OG %>% 
+  select(OrthologGroup, GeneSpecies2,Species2, UGeneSpecies2) %>% 
+  rename("UGenes" = UGeneSpecies2, "Genes" = GeneSpecies2,"Species" = Species2)
+
+gene_set_combined <- rbind(s1,s2)
+gene_set <- gene_set_combined %>% 
+  distinct(UGenes, .keep_all = T)
+ 
+length(unique(gene_set$OrthologGroup))
+combined_expression_data <- gene_set %>% 
+  select(OrthologGroup) %>% 
+  group_by(OrthologGroup) %>% 
+  slice(1)
+
+col_function_1 <- colorRamp2(c(-3, 0 ,3), c("#0571b0", "#f7f7f7","#ca0020" ))
+
+
+for (i in 1:length(file_list_2)){
+  
+  # i <- 1
+
+  x <- read_delim(file_list_2[i], show_col_types = FALSE) %>% 
+    select(Genes, contains("1."))
+  
+  species <- sapply(strsplit(file_list_2[i], "transcriptomicsData/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[", 1)  
+  
+  conserved_genes_one_species <- gene_set[,-4] %>% 
+    filter(Species == species)
+
+  
+  expr <- x %>% 
+    filter(Genes %in% conserved_genes_one_species$Genes)
+
+    print(paste0(species, ": ", nrow(expr), " genes."))
+
+  
+  scaled_data <- t(scale(t(expr[,-1]), center = T, scale = T))
+  scaled_data[is.nan(scaled_data)] <-0 
+  
+   scaled_data_with_genes <- cbind(Genes = expr$Genes, scaled_data)
+
+  aligning_genes <- gene_set %>%
+    left_join(as.data.frame(scaled_data_with_genes), by = "Genes") %>%
+    na.omit() %>%
+    distinct(Genes, .keep_all = T) # Necessary as Lodge and Scots share the same genome...
+
+  combined_expression_data <- cbind(combined_expression_data, aligning_genes[, -c(1:4)])
+
+    
+  
+}
+
+# This may change!
+sample_clustering <- c(rep("1", 5),rep("2", 5), rep("3",9), rep("4",6), # aspen
+                       rep("1",4),rep("2", 8), rep("3",10), rep("4",6), # birch
+                       rep("1",7),rep("2", 8), rep("3",3), rep("4",9))  # cherry
+
+
+
+  ha = HeatmapAnnotation(
+    Samples = sample_clustering,
+    na_col = "white",
+    col = list(Samples = c("1" = "#FFB000", "2" = "#DC267F","3" = "#3D5A71",  "4" = "#FE6100")),
+    simple_anno_size = unit(0.8, "cm"),
+    show_legend = F,
+    show_annotation_name = F
+  )
+  
+
+combined_expression_matrix <- combined_expression_data %>% 
+  ungroup() %>% 
+  select(-1) %>% 
+  select(c(contains("A"), contains("B"), contains("C")))%>%
+  mutate_if(is.character, as.numeric) %>% 
+  as.matrix()
+
+print(nrow(combined_expression_matrix))
+
+column_split <- rep("A", 80)
+column_split[26:53] <- "B"
+column_split[54:80] <- "C"
+
+
+column_split <- factor(column_split, levels = c("A", "B", "C"))
+
+ht_opt$TITLE_PADDING = unit(c(30, 10), "points")
+ht_opt$message = FALSE
+ 
+
+
+Heatmap(combined_expression_matrix,
+                 show_column_names = FALSE,
+                 cluster_rows = TRUE,
+                 show_row_dend = FALSE,
+                 column_title =   species_lat_name,
+                 column_title_side = "bottom",
+                 show_column_dend = FALSE,
+                 column_dend_height = unit(20, "mm"),
+                 column_title_gp = gpar(fontsize = 18, fontface = "italic"  ,fill = "white", border = "white" ),
+                 clustering_distance_rows = "euclidean",
+                 clustering_method_rows = "ward.D2",
+                 show_row_names = FALSE,
+                 heatmap_width = unit(30, "cm"),
+                 heatmap_height = unit(18, "cm"),
+                 column_order = 1:ncol(combined_expression_matrix),
+                 top_annotation = ha,
+                 show_heatmap_legend = F,
+                 col = col_function_1,
+                 column_split = column_split
+  )
+  
+} else{ 
+  
+  species_list <- c("Nor", "Scots", "Lodge")
+  species_lat_name <- c("Picea abies", "Pinus sylvestris","Pinus contorta" )
+  
+  file_list_2 <- c()
+  for (i in species_list){
+    
+    expr_name <- paste0("Data/DATA/transcriptomicsData/",i,"Wood_transcriptomics.txt")
+    file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+    
+  }
+  
+  vector_for_cliqueIDs <- conserved_genes_gymno %>% # One clique per orthogroup
+    ungroup() %>% 
+    group_by(OrthologGroup) %>% 
+    slice_max(order_by = GymnoSum, n = 15) %>% 
+    slice_min(order_by = CrossSum) %>%  
+    mutate(OG_SUM = n()) %>% 
+    slice(1)
+  
+  
+  conserved_genes_one_clique_pr_OG <-conserved_genes_gymno %>% 
+    filter(cliqueID %in% vector_for_cliqueIDs$cliqueID) %>% 
+    ungroup() %>% 
+    group_by(cliqueID) %>% 
+    filter(sum(Gymno) == 3) %>% 
+    ungroup()
+
+  
+  length(unique(conserved_genes_gymno$OrthologGroup))  
+  length(unique(conserved_genes_one_clique_pr_OG$OrthologGroup)) 
+  length(unique(conserved_genes_one_clique_pr_OG$cliqueID)) 
+  
+  s1 <- conserved_genes_one_clique_pr_OG %>% 
+    select(OrthologGroup, GeneSpecies1, Gymno ,Species1, UGeneSpecies1, cliqueID) %>% 
+    rename("UGenes" = UGeneSpecies1, "Genes" = GeneSpecies1 ,"Species" = Species1) %>% 
+    filter(Gymno == 1)
+  
+  s2 <- conserved_genes_one_clique_pr_OG %>% 
+    select(OrthologGroup, GeneSpecies2,Species2, Gymno,UGeneSpecies2, cliqueID) %>% 
+    rename("UGenes" = UGeneSpecies2, "Genes" = GeneSpecies2,"Species" = Species2) %>% 
+    filter(Gymno == 1)
+  
+  gene_set_combined <- rbind(s1,s2)
+  gene_set <- gene_set_combined %>% 
+    distinct(UGenes, .keep_all = T) %>% 
+    group_by(cliqueID) %>% 
+    filter(sum(Gymno) == 3) %>% 
+    ungroup()
+    
+  length(unique(gene_set$OrthologGroup))
+  
+  
+  
+  combined_expression_data <- gene_set %>% 
+    select(OrthologGroup) %>% 
+    group_by(OrthologGroup) %>% 
+    slice(1)
+  
+  # test_og <- gene_set %>% 
+  #   filter(OrthologGroup == "OG0001253")
+  
+  col_function_1 <- colorRamp2(c(-3, 0 ,3), c("#0571b0", "#f7f7f7","#ca0020" ))
+  
+  
+  for (i in 1:length(file_list_2)){
+    
+  # i <- 2
+    
+    x <- read_delim(file_list_2[i], show_col_types = FALSE) %>% 
+      select(Genes, contains("1."))
+    
+    species <- sapply(strsplit(file_list_2[i], "transcriptomicsData/"), "[",2)
+    species <- sapply(strsplit(species, "Wood"), "[", 1)  
+    
+    
+    conserved_genes_one_species <- gene_set %>% 
+      filter(Species == species)
+    
+    
+    expr <- x %>% 
+      filter(Genes %in% conserved_genes_one_species$Genes)
+    
+    print(paste0(species, ": ", nrow(expr), " genes."))
+    
+    
+    scaled_data <- t(scale(t(expr[,-1]), center = T, scale = T))
+    scaled_data[is.nan(scaled_data)] <-0 #Lodge had a few rows with NaNs which became an issue when running Lodge on the clade-specific genes.
+    
+    scaled_data_with_genes <- cbind(Genes = expr$Genes, scaled_data)
+    
+    aligning_genes <- gene_set[, -c(1,3,4)] %>%
+      left_join(as.data.frame(scaled_data_with_genes), by = "Genes") %>%
+      na.omit() %>%
+      distinct(Genes, .keep_all = T) # Necessary as Lodge and Scots share the same genome...
+
+    combined_expression_data <- cbind(combined_expression_data, aligning_genes[, -c(1:3)])
+    
+    
+    
+  }
+  
+  sample_clustering <- c(rep("1",5),rep("2", 7), rep("3",5), rep("4",10), # norway spruce
+                         rep("1",6),rep("2", 8), rep("3",7), rep("4",7),  # scots pine
+                         rep("1",7),rep("2",6), rep("3",10), rep("4",4))  # lodgepole pine
+  
+  
+  ha = HeatmapAnnotation(
+    Samples = sample_clustering,
+    na_col = "white",
+    col = list(Samples = c("1" = "#FFB000", "2" = "#DC267F","3" = "#3D5A71",  "4" = "#FE6100")),
+    simple_anno_size = unit(0.8, "cm"),
+    show_legend = F,
+    show_annotation_name = F
+  )
+  
+  
+  combined_expression_matrix <- combined_expression_data %>% 
+    ungroup() %>% 
+    select(-1) %>% 
+    select(c(contains("N"), contains("S"), contains("L")))%>%
+    mutate_if(is.character, as.numeric) %>% 
+    as.matrix()
+  
+  print(nrow(combined_expression_matrix))
+  
+  column_split <- rep("N", 82)
+  column_split[28:55] <- "S"
+  column_split[56:82] <- "L"
+  
+  column_split <- factor(column_split, levels = c("N", "S", "L"))
+
+  ht_opt$TITLE_PADDING = unit(c(30, 10), "points")
+  ht_opt$message = FALSE
+  
+  
+  
+  Heatmap(combined_expression_matrix,
+          show_column_names = FALSE,
+          cluster_rows = TRUE,
+          show_row_dend = FALSE,
+          column_title =   species_lat_name,
+          column_title_side = "bottom",
+          show_column_dend = FALSE,
+          column_dend_height = unit(20, "mm"),
+          column_title_gp = gpar(fontsize = 18, fontface = "italic"  ,fill = "white", border = "white" ),
+          clustering_distance_rows = "euclidean",
+          clustering_method_rows = "ward.D2",
+          show_row_names = FALSE,
+          heatmap_width = unit(30, "cm"),
+          heatmap_height = unit(18, "cm"),
+          column_order = 1:ncol(combined_expression_matrix),
+          top_annotation = ha,
+          show_heatmap_legend = F,
+          col = col_function_1,
+          column_split = column_split
+  )
+  }
+
+
+
+
+```
+
+
+
+
+# Unique genes
+
+
+
+```{r}
+
+
+clade <- "Gymno" # "Gymno"
+load("Data/DATA/unique_gymnosperm_genes_SUM_T_3.RData") # Code works for enhanced genes
+
+# Data/DATA/unique_angiosperm_genes_SUM_T_3.RData
+# Data/DATA/unique_gymnosperm_genes_SUM_T_3.RData
+
+#---------------------------------------------------
+
+if(clade == "Angio"){
+  
+  species_list <- c("Cher", "Asp", "Birch")
+  species_lat_name <- c("Populus tremula", "Betula pendula","Prunus avium" )
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/",i,"Wood_transcriptomics.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+  
+}
+
+conserved_genes_one_clique_pr_OG <- conserved_genes_angio %>% # One clique per orthogroup
+  ungroup() %>% 
+  group_by(OrthologGroup) %>% 
+  slice_max(order_by = AngioSum, n = 3) %>% 
+  mutate(OG_SUM = n())
+
+length(unique(conserved_genes_angio$OrthologGroup))  
+length(unique(conserved_genes_one_clique_pr_OG$OrthologGroup)) 
+length(unique(conserved_genes_one_clique_pr_OG$cliqueID)) 
+ 
+s1 <- conserved_genes_one_clique_pr_OG %>% 
+  select(OrthologGroup, GeneSpecies1 ,Species1, UGeneSpecies1) %>% 
+  rename("UGenes" = UGeneSpecies1, "Genes" = GeneSpecies1 ,"Species" = Species1)
+  
+s2 <- conserved_genes_one_clique_pr_OG %>% 
+  select(OrthologGroup, GeneSpecies2,Species2, UGeneSpecies2) %>% 
+  rename("UGenes" = UGeneSpecies2, "Genes" = GeneSpecies2,"Species" = Species2)
+
+gene_set_combined <- rbind(s1,s2)
+gene_set <- gene_set_combined %>% 
+  distinct(UGenes, .keep_all = T)
+ 
+length(unique(gene_set$OrthologGroup))
+combined_expression_data <- gene_set %>% 
+  select(OrthologGroup) %>% 
+  group_by(OrthologGroup) %>% 
+  slice(1)
+
+col_function_1 <- colorRamp2(c(-3, 0 ,3), c("#0571b0", "#f7f7f7","#ca0020" ))
+
+
+for (i in 1:length(file_list_2)){
+  
+  # i <- 1
+
+  x <- read_delim(file_list_2[i], show_col_types = FALSE) %>% 
+    select(Genes, contains("1."))
+  
+  species <- sapply(strsplit(file_list_2[i], "transcriptomicsData/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[", 1)  
+  
+  conserved_genes_one_species <- gene_set[,-4] %>% 
+    filter(Species == species)
+
+  
+  expr <- x %>% 
+    filter(Genes %in% conserved_genes_one_species$Genes)
+
+    print(paste0(species, ": ", nrow(expr), " genes."))
+
+  
+  scaled_data <- t(scale(t(expr[,-1]), center = T, scale = T))
+  scaled_data[is.nan(scaled_data)] <-0 
+  
+   scaled_data_with_genes <- cbind(Genes = expr$Genes, scaled_data)
+
+  aligning_genes <- gene_set %>%
+    left_join(as.data.frame(scaled_data_with_genes), by = "Genes") %>%
+    na.omit() %>%
+    distinct(Genes, .keep_all = T) # Necessary as Lodge and Scots share the same genome...
+
+  combined_expression_data <- cbind(combined_expression_data, aligning_genes[, -c(1:4)])
+
+    
+  
+}
+
+# This may change!
+sample_clustering <- c(rep("1", 5),rep("2", 5), rep("3",9), rep("4",6), # aspen
+                       rep("1",4),rep("2", 8), rep("3",10), rep("4",6), # birch
+                       rep("1",7),rep("2", 8), rep("3",3), rep("4",9))  # cherry
+
+
+
+  ha = HeatmapAnnotation(
+    Samples = sample_clustering,
+    na_col = "white",
+    col = list(Samples = c("1" = "#FFB000", "2" = "#DC267F","3" = "#3D5A71",  "4" = "#FE6100")),
+    simple_anno_size = unit(0.8, "cm"),
+    show_legend = F,
+    show_annotation_name = F
+  )
+  
+
+combined_expression_matrix <- combined_expression_data %>% 
+  ungroup() %>% 
+  select(-1) %>% 
+  select(c(contains("A"), contains("B"), contains("C")))%>%
+  mutate_if(is.character, as.numeric) %>% 
+  as.matrix()
+
+print(nrow(combined_expression_matrix))
+
+column_split <- rep("A", 80)
+column_split[26:53] <- "B"
+column_split[54:80] <- "C"
+
+
+column_split <- factor(column_split, levels = c("A", "B", "C"))
+
+ht_opt$TITLE_PADDING = unit(c(30, 10), "points")
+ht_opt$message = FALSE
+ 
+
+
+Heatmap(combined_expression_matrix,
+                 show_column_names = FALSE,
+                 cluster_rows = TRUE,
+                 show_row_dend = FALSE,
+                 column_title =   species_lat_name,
+                 column_title_side = "bottom",
+                 show_column_dend = FALSE,
+                 column_dend_height = unit(20, "mm"),
+                 column_title_gp = gpar(fontsize = 18, fontface = "italic"  ,fill = "white", border = "white" ),
+                 clustering_distance_rows = "euclidean",
+                 clustering_method_rows = "ward.D2",
+                 show_row_names = FALSE,
+                 heatmap_width = unit(30, "cm"),
+                 heatmap_height = unit(18, "cm"),
+                 column_order = 1:ncol(combined_expression_matrix),
+                 top_annotation = ha,
+                 show_heatmap_legend = F,
+                 col = col_function_1,
+                 column_split = column_split
+  )
+  
+} else{ 
+  
+  species_list <- c("Nor", "Scots", "Lodge")
+  species_lat_name <- c("Picea abies", "Pinus sylvestris","Pinus contorta" )
+  
+  file_list_2 <- c()
+  for (i in species_list){
+    
+    expr_name <- paste0("Data/DATA/transcriptomicsData/",i,"Wood_transcriptomics.txt")
+    file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+    
+  }
+  
+  vector_for_cliqueIDs <- conserved_genes_gymno %>% # One clique per orthogroup
+    ungroup() %>% 
+    group_by(OrthologGroup) %>% 
+    slice_max(order_by = GymnoSum, n = 15) %>% 
+    slice_min(order_by = CrossSum) %>%  
+    mutate(OG_SUM = n()) %>% 
+    slice(1)
+  
+  
+  conserved_genes_one_clique_pr_OG <-conserved_genes_gymno %>% 
+    filter(cliqueID %in% vector_for_cliqueIDs$cliqueID) %>% 
+    ungroup() %>% 
+    group_by(cliqueID) %>% 
+    filter(sum(Gymno) == 3) %>% 
+    ungroup()
+
+  
+  length(unique(conserved_genes_gymno$OrthologGroup))  
+  length(unique(conserved_genes_one_clique_pr_OG$OrthologGroup)) 
+  length(unique(conserved_genes_one_clique_pr_OG$cliqueID)) 
+  
+  s1 <- conserved_genes_one_clique_pr_OG %>% 
+    select(OrthologGroup, GeneSpecies1, Gymno ,Species1, UGeneSpecies1, cliqueID) %>% 
+    rename("UGenes" = UGeneSpecies1, "Genes" = GeneSpecies1 ,"Species" = Species1) %>% 
+    filter(Gymno == 1)
+  
+  s2 <- conserved_genes_one_clique_pr_OG %>% 
+    select(OrthologGroup, GeneSpecies2,Species2, Gymno,UGeneSpecies2, cliqueID) %>% 
+    rename("UGenes" = UGeneSpecies2, "Genes" = GeneSpecies2,"Species" = Species2) %>% 
+    filter(Gymno == 1)
+  
+  gene_set_combined <- rbind(s1,s2)
+  gene_set <- gene_set_combined %>% 
+    distinct(UGenes, .keep_all = T) %>% 
+    group_by(cliqueID) %>% 
+    filter(sum(Gymno) == 3) %>% 
+    ungroup()
+    
+  length(unique(gene_set$OrthologGroup))
+  
+  
+  
+  combined_expression_data <- gene_set %>% 
+    select(OrthologGroup) %>% 
+    group_by(OrthologGroup) %>% 
+    slice(1)
+  
+  # test_og <- gene_set %>% 
+  #   filter(OrthologGroup == "OG0001253")
+  
+  col_function_1 <- colorRamp2(c(-3, 0 ,3), c("#0571b0", "#f7f7f7","#ca0020" ))
+  
+  
+  for (i in 1:length(file_list_2)){
+    
+  # i <- 2
+    
+    x <- read_delim(file_list_2[i], show_col_types = FALSE) %>% 
+      select(Genes, contains("1."))
+    
+    species <- sapply(strsplit(file_list_2[i], "transcriptomicsData/"), "[",2)
+    species <- sapply(strsplit(species, "Wood"), "[", 1)  
+    
+    
+    conserved_genes_one_species <- gene_set %>% 
+      filter(Species == species)
+    
+    
+    expr <- x %>% 
+      filter(Genes %in% conserved_genes_one_species$Genes)
+    
+    print(paste0(species, ": ", nrow(expr), " genes."))
+    
+    
+    scaled_data <- t(scale(t(expr[,-1]), center = T, scale = T))
+    scaled_data[is.nan(scaled_data)] <-0 #Lodge had a few rows with NaNs which became an issue when running Lodge on the clade-specific genes.
+    
+    scaled_data_with_genes <- cbind(Genes = expr$Genes, scaled_data)
+    
+    aligning_genes <- gene_set[, -c(1,3,4)] %>%
+      left_join(as.data.frame(scaled_data_with_genes), by = "Genes") %>%
+      na.omit() %>%
+      distinct(Genes, .keep_all = T) # Necessary as Lodge and Scots share the same genome...
+
+    combined_expression_data <- cbind(combined_expression_data, aligning_genes[, -c(1:3)])
+    
+    
+    
+  }
+  
+  sample_clustering <- c(rep("1",5),rep("2", 7), rep("3",5), rep("4",10), # norway spruce
+                         rep("1",6),rep("2", 8), rep("3",7), rep("4",7),  # scots pine
+                         rep("1",7),rep("2",6), rep("3",10), rep("4",4))  # lodgepole pine
+  
+  
+  ha = HeatmapAnnotation(
+    Samples = sample_clustering,
+    na_col = "white",
+    col = list(Samples = c("1" = "#FFB000", "2" = "#DC267F","3" = "#3D5A71",  "4" = "#FE6100")),
+    simple_anno_size = unit(0.8, "cm"),
+    show_legend = F,
+    show_annotation_name = F
+  )
+  
+  
+  combined_expression_matrix <- combined_expression_data %>% 
+    ungroup() %>% 
+    select(-1) %>% 
+    select(c(contains("N"), contains("S"), contains("L")))%>%
+    mutate_if(is.character, as.numeric) %>% 
+    as.matrix()
+  
+  print(nrow(combined_expression_matrix))
+  
+  column_split <- rep("N", 82)
+  column_split[28:55] <- "S"
+  column_split[56:82] <- "L"
+  
+  column_split <- factor(column_split, levels = c("N", "S", "L"))
+
+  ht_opt$TITLE_PADDING = unit(c(30, 10), "points")
+  ht_opt$message = FALSE
+  
+  
+  
+  Heatmap(combined_expression_matrix,
+          show_column_names = FALSE,
+          cluster_rows = TRUE,
+          show_row_dend = FALSE,
+          column_title =   species_lat_name,
+          column_title_side = "bottom",
+          show_column_dend = FALSE,
+          column_dend_height = unit(20, "mm"),
+          column_title_gp = gpar(fontsize = 18, fontface = "italic"  ,fill = "white", border = "white" ),
+          clustering_distance_rows = "euclidean",
+          clustering_method_rows = "ward.D2",
+          show_row_names = FALSE,
+          heatmap_width = unit(30, "cm"),
+          heatmap_height = unit(18, "cm"),
+          column_order = 1:ncol(combined_expression_matrix),
+          top_annotation = ha,
+          show_heatmap_legend = F,
+          col = col_function_1,
+          column_split = column_split
+  )
+  }
+
+
+
+
+```
+
+
+
