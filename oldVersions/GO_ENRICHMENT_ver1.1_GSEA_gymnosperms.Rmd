@@ -1,0 +1,149 @@
+---
+title: "GO enrichment"
+author: "Ellen Dimmen Chapple"
+date: '`r format(Sys.time(), "%d.%m.%Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(GSEABase)
+library(GOstats)
+library(gdata)
+
+
+
+```
+
+# Gene Set Enrichment Analysis
+
+- N, all expressed genes
+- n, all expressed and annotated genes
+- k, set of conserved genes
+- x, genes that are conserved and annotated
+
+## For a list of conserved genes
+
+```{r message=FALSE, warning=FALSE}
+
+# EXPRESSED GENES
+expressed_genes <- read_delim("Data/DATA/transcriptomicsData/NorWood_transcriptomics.txt")
+
+# EXPRESSED GENES WITH ANNOTATION
+
+file_1_ori <- read_delim("Data/DATA/Picab02_230926_at01_longest_merged.tsv") %>% 
+  dplyr::select(id, eggnog_description, interpro_go) 
+
+file_1 <- file_1_ori%>% 
+  mutate(id = gsub("\\.\\mRNA\\.\\d+", "",id)) %>% 
+  mutate(id = sub("^(.*?_.*?_).*_(.*)$","\\1\\2" , id)) %>% 
+  dplyr::rename(ID = "id") 
+
+
+file_2_and_3 <-inner_join(read_delim("Data/DATA/ID_convert_oldtranscript2newGene.txt", col_names = FALSE),            
+  read_delim("Data/DATA/ID_TRANSLATION_TABLE_clean.txt", col_names = FALSE),by = "X1") %>%
+  dplyr::rename(ID = "X1", ID2 = "X2.x", ID3 = "X2.y")
+
+
+  
+go_list_file <- left_join(file_2_and_3, file_1, by = "ID") %>% 
+  dplyr::select(-c(ID, ID3)) %>% 
+  separate_rows("interpro_go", sep =  ",") %>% 
+  stats::na.omit(interpro_go) %>% 
+  dplyr::rename(`Sequence Name` = "ID2", `GO Term` = "eggnog_description", `GO ID` = "interpro_go") %>% 
+  filter(`Sequence Name` %in% expressed_genes$Genes)
+
+
+# GO
+
+go_list <- go_list_file
+
+go_data_frame <- data.frame(go_id=go_list$`GO ID`, evidence=rep("ND", nrow(go_list)), 
+                          gene_id=go_list$`Sequence Name`)
+go_frame_object=GOFrame(go_data_frame,organism="NorwaySpruce")
+go_all_frame_object=GOAllFrame(go_frame_object)
+
+
+# PARAMETERS
+gene_set_collection <- GeneSetCollection(go_all_frame_object, setType = GOCollection())
+universe <- expressed_genes$Genes
+
+# FILE WITH ASPEN GENES FROM THE ULTRA-ULTRA-CONSERVED ORTHOLOG GROUPS (from IGRAPH)
+load("Data/DATA/uuc_orthologs_gymnosperms.RData") # (uuc_orthologs_angiosperms_asp.RData OR uuc_orthologs_asp.RData)
+
+
+```
+
+
+
+```{r}
+
+
+#------------------------------------------ GSEA ------------------------------------------------------------------------------
+gene_set <- uuc_genes_only_one_clique %>% 
+  filter(Species == "Nor")
+
+pval_cutoff <- 0.05
+
+  
+gene_ID <- gene_set$Genes
+group_name <- "uuc_genes"
+
+params <- GSEAGOHyperGParams(name="GSEA",
+                             geneSetCollection = gene_set_collection,
+                             geneIds = gene_ID,
+                             universeGeneIds = universe, 
+                             ontology = "BP",
+                             pvalueCutoff = pval_cutoff,
+                             conditional = FALSE,
+                             testDirection = "over")
+
+hyper_g_test <- hyperGTest(params)
+summary_table_uuc <- summary(hyper_g_test)
+summary_table_uuc <- summary_table_uuc[summary_table_uuc$Count>1,]
+summary_table_uuc <- summary_table_uuc[,c(1,2,5,6,7)]
+colnames(summary_table_uuc) <- c("GO id","P-value","x","n","GO term")
+
+rownames(summary_table_uuc) <- 1:nrow(summary_table_uuc)
+
+summary_table_uuc$`P-value`<- format(summary_table_uuc$`P-value`, digits=3, scientific=TRUE)
+
+
+summary_table_uuc_gymno <- summary_table_uuc
+
+```
+
+
+```{r eval=FALSE, include=FALSE}
+save(summary_table_uuc_gymno, file = "summary_table_uuc_gymno.RData")
+
+```
+ 
+
+
+```{r}
+# Print GO IDs for REVIGO - use the R script created for plotting treemap.
+
+df <- summary_table_uuc[,1]
+
+for (i in df){
+  cat(i, "\n")
+}
+
+
+```
+
+
+
+

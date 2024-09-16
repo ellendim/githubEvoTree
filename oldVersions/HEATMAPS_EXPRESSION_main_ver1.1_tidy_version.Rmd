@@ -1,0 +1,183 @@
+---
+title: "Heatmaps - conserved genes"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ComplexHeatmap)
+library(cowplot)
+library(circlize)
+
+```
+
+
+# Gene expression using all co-expressologs
+
+```{r}
+
+
+co_expressed_file <- read.delim("Data/DATA/textFiles/all_expressed_genes.txt", sep = " ", header = T) %>% 
+  filter(MaxpVal < 0.1)
+
+
+```
+
+
+
+1. Read the expression-file
+2. For the heatmaps: cluster the genes, while keeping the samples in the same order. Plot.
+
+# Creating loop for all species
+
+```{r message=FALSE, warning=FALSE}
+
+# Species list
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+species_full_name <- c("Lodgepole Pine","Aspen", "Norway Spruce", "Scots Pine",    "Birch", "Cherry" )
+
+# Loop for file name
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/",i,"Wood_transcriptomics_hm.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+  
+}
+
+# Colour function
+# col_function_1 <- colorRamp2(c(-4, 0 ,4), c("#0571b0", "#f7f7f7","#ca0020" ))
+
+# col_function_2 <- colorRamp2(c(-4, 0 ,4), c("#440154", "#31688e","#fde725" ))
+
+# Legend
+# lgd_1 = Legend(type = "points" ,col_fun = col_function_1, title = "Z Score", title_gp = gpar(fontsize = 12, fontface = "bold") , legend_height = unit(6, "cm"), grid_width = unit(0.5, "cm"), title_position = "topcenter",labels_gp = gpar(fontsize = 10),at = c(-4, 0 ,4), title_gap =  unit(0.5, "cm"))
+
+
+# Heatmap loop
+
+for (i in 1:length(file_list_2)){
+  
+   # i <- 6
+
+  x <- read_delim(file_list_2[i], show_col_types = FALSE)
+  
+  species <- sapply(strsplit(file_list_2[i], "transcriptomicsForHeatmaps/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[", 1)
+
+
+  expression_data <- x %>%
+    filter(Genes %in% co_expressed_file$GeneSpecies1 | Genes %in% co_expressed_file$GeneSpecies2) %>%
+    column_to_rownames("Genes") %>% 
+    select(contains("1."))
+
+
+  scaled_data <- t(scale(t(expression_data), center = TRUE, scale = TRUE))
+  scaled_data[is.nan(scaled_data)] <-0
+  
+  # col_function_1 <- colorRamp2(c(min(scaled_data), mean(scaled_data) ,max(scaled_data)), c("#08306b", "#f7f7f7","#de2d26"))
+
+  cat("Species: ",species ," Matrix dimension: ", dim(scaled_data))
+  full_name <- species_full_name[i]
+
+hm <-  Heatmap(scaled_data, 
+               name = species,
+               show_column_names = T,
+               cluster_rows = TRUE,
+               show_row_dend = FALSE,
+               clustering_distance_rows = "euclidean",
+               clustering_method_rows = "ward.D2",
+               show_row_names = FALSE,
+               column_title = full_name,
+               column_title_gp = gpar(fontsize = 25),
+               column_title_side = c("bottom"),
+               show_heatmap_legend = F,
+               col = c("#08306b", "#f7f7f7","#de2d26"),
+               column_order = 1:ncol(expression_data),
+               heatmap_width = unit(11, "cm"), 
+               heatmap_height = unit(25, "cm")
+               
+)
+
+
+
+
+
+
+  new_name <- as.character(paste0("hm_",species))
+  gdata::mv("hm", new_name) 
+
+}
+
+
+
+```
+
+
+
+Creating grob for plot_grid()
+
+
+```{r}
+# lgd_1_grob <- grid.grabExpr(draw(lgd_1))
+g1 <- grid.grabExpr(print(`hm_Asp`))
+g2 <- grid.grabExpr(print(`hm_Cher`))
+g3 <- grid.grabExpr(print(`hm_Birch`))
+g4 <- grid.grabExpr(print(`hm_Nor`))
+g5 <- grid.grabExpr(print(`hm_Scots`))
+g6 <- grid.grabExpr(print(`hm_Lodge`))
+
+
+```
+
+```{r fig.dim = c(40,20)}
+# 
+grid_plot_all<-plot_grid(g1,g3,g2,g5,g4,g6,nrow = 1, ncol = 6,axis = "b")
+grid_plot_all
+
+
+#
+# grid_plot_angiosperms <-plot_grid(g1,g2, g3, lgd_1_grob , nrow = 1, ncol = 4)
+# grid_plot_angiosperms
+# 
+# 
+# plot_grid_cher <- plot_grid(g2, lgd_1_grob)
+# plot_grid_cher
+
+
+```
+
+
+
+
+```{r fig.dim = c(40,20)}
+# 
+# grid_plot_conserved <-plot_grid(g1,g4,g2,g3,g6,g5,lgd_1_grob, nrow = 1, ncol = 7, rel_widths = c(1,1,1,1,1,1, 1), rel_heights = c(0.5, 0.5, 0.5, 1,1,1,1) ,axis = "b")
+# grid_plot_conserved
+
+
+
+grid_plot_gymnosperms <-plot_grid(g4,g5, g6,  nrow = 1, ncol = 3)
+grid_plot_gymnosperms
+
+```
+
+
+
+
+
+
+
+
+
+
