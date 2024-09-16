@@ -1,0 +1,304 @@
+---
+title: "Heatmaps - conserved genes"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(ComplexHeatmap)
+library(gplots)
+library(circlize)
+library(gdata)
+
+
+```
+
+1. Read the expression-file
+2. Read in file for the conserved genes - cons_genes_all_species.
+3. Filter out genes in expression files that are not conserved. 
+
+5. For the heatmaps: cluster the genes, while keeping the samples in the same order. Plot.
+
+# Conserved genes - heatmap
+
+1) Load files
+
+
+
+```{r}
+
+
+species_list <- c("Cher", "Asp", "Birch","Nor", "Scots", "Lodge") 
+# Change this based on which set that is to be used: "Cher", "Asp", "Birch", "Nor", "Scots", "Lodge"
+
+
+# CONSERVED AND CO-EXPRESSED GENES - p-value cutoff at 0.05
+
+conserved_genes <- read.delim("Data/DATA/textFiles/all_expressed_genes.txt", header = TRUE, sep = " ") %>% 
+  filter(MaxpVal < 0.1) #(OBS! Check p in: MaxPVal)
+
+# CONSERVED: cons_genes_all_species.txt 
+# ANGIOSPERM-SPECIFIC: cons_genes_angiosperms.txt 
+# GYMNOSPERM-SPECIFIC: cons_genes_gymnosperms.txt 
+
+
+
+ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t") %>% 
+  mutate(Pinsyl.SHORT.cp.pep = Pinsyl.SHORT.pep) %>% 
+  rename(
+    Asp = Poptre.SHORT.pep,
+    Birch = Betpen.SHORT.pep,
+    Nor = Picabi.SHORT.pep,
+    Scots = Pinsyl.SHORT.pep,
+    Cher = Prunavi.SHORT.pep,
+    Lodge = Pinsyl.SHORT.cp.pep,
+    OrthoGroup = Orthogroup) %>% 
+  mutate(Asp = gsub("Poptre_", "", Asp)) %>%
+  mutate(Asp = gsub("\\.\\d\\.p\\d$", "", Asp)) %>% 
+  mutate(Birch = gsub("Betpen_", "", Birch)) %>%
+  mutate(Cher = gsub("Prunavi_", "", Cher)) %>%
+  mutate(Nor = gsub("\\.p\\d$", "", Nor)) %>%
+  mutate(Cher = gsub("\\.p\\d$", "", Cher))
+
+
+```
+
+
+
+
+
+```{r}
+
+
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/",i,"Wood_transcriptomics_hm.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+  
+}
+
+# Use file with all expressed genes!
+
+co_expressologs_all <- read.delim("Data/DATA/textFiles/all_expressed_genes.txt", sep = " ") %>% 
+  filter(MaxpVal < 0.1)
+
+for(i in file_list_2){
+
+  # i <- file_list_2[2]
+  
+  species <- sapply(strsplit(i, "transcriptomicsForHeatmaps/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[",1)
+  print(species)
+
+  
+  co_expressologs_one_species <- co_expressologs_all %>% 
+    filter(species %in% Species1 | species %in% Species2)
+  
+  col_1 <-co_expressologs_one_species %>% 
+    select(Species1, GeneSpecies1) %>% 
+    rename(Species = "Species1", Genes = "GeneSpecies1") %>% 
+    filter(Species == species)
+  
+  col_2 <-co_expressologs_one_species %>% 
+    select(Species2, GeneSpecies2) %>% 
+    rename(Species = "Species2", Genes = "GeneSpecies2")%>% 
+    filter(Species == species)
+  
+  if(nrow(col_1) == 0) {
+    combined_df <- col_2
+  }
+  
+  
+  if(nrow(col_2) == 0) {
+    combined_df <- col_1
+  }
+
+  if(nrow(col_2) > 0 & nrow(col_1) > 0){
+    combined_df <- rbind(col_1, col_2)
+  }
+  
+  combined_df <- combined_df %>% 
+    distinct(Genes, .keep_all = T)
+    
+  
+  expression <- read.delim(i) %>%
+    filter(Genes %in% combined_df$Genes) %>% 
+    select(c(Genes, contains("1.")))
+
+  
+  new_name <- as.character(paste0("co_expr",species, "-",species))
+  mv("expression", new_name) 
+
+}
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+
+
+# Legend for heatmap
+col_function_1 <- colorRamp2(c(-3, 0 ,3), c("#0571b0", "#f7f7f7","#ca0020" ))
+lgd_1 = Legend(col_fun = col_function_1, title = "Z-value", title_gp = gpar(fontsize = 20) , legend_height = unit(12, "cm"), grid_width = unit(1, "cm"), labels_gp = gpar(fontsize = 20),at = c(-3, 0 ,3), title_gap =  unit(0.5, "cm"))
+
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+species_full_name <- c("Lodgepole pine","Aspen", "Norway spruce", "Scots pine",    "Birch", "Cherry" )
+
+# Loop
+
+for (i in 1:length(species_list)){
+  
+  
+  # i <- 1
+
+  species <- species_list[i]
+  
+  file <- paste0("co_expr",species, "-",species)
+  coex <- get(file)  
+  
+  expressed_and_conserved_genes <- coex %>%
+    column_to_rownames("Genes") %>%
+    as.matrix()
+  
+  scaled_data <- t(scale(t(expressed_and_conserved_genes), center = T, scale = T)) 
+  scaled_data[is.nan(scaled_data)] <-0
+  
+  full_name <- species_full_name[i]
+  
+  # CREATING HEATMAPS
+  ht_opt$TITLE_PADDING = unit(c(30, 10), "points")
+  ht_opt$message = FALSE
+  
+  hm <-  Heatmap(scaled_data ,show_column_names = FALSE,
+                 cluster_rows = TRUE,
+                 show_row_dend = FALSE,
+                 column_title = full_name,
+                 column_title_gp = gpar(fontsize = 26, fill = "white", border = "white" ),
+                 clustering_distance_rows = "euclidean",
+                 clustering_method_rows = "ward.D2",
+                 show_row_names = FALSE,
+                 heatmap_width = unit(10, "cm"), 
+                 heatmap_height = unit(20, "cm"),
+                 column_order = 1:ncol(scaled_data),
+                 show_heatmap_legend = F,
+                 col = col_function_1
+  )
+  
+  print(hm)
+  new_name <- as.character(paste0("hm_",species))
+  mv("hm", new_name)
+  
+  
+}
+
+# save figs with dim 442x767
+
+```
+
+```{r}
+
+library(cowplot)
+
+g1 <- grid.grabExpr(print(`hm_Asp`),width = 10, height = 20)
+g2 <- grid.grabExpr(print(`hm_Cher`),width = 10, height = 20)
+g3 <- grid.grabExpr(print(`hm_Birch`),width = 10, height = 20)
+g4 <- grid.grabExpr(print(`hm_Nor`),width = 10, height = 20)
+g5 <- grid.grabExpr(print(`hm_Scots`),width = 10, height = 20)
+g6 <- grid.grabExpr(print(`hm_Lodge`),width = 10, height = 20)
+
+grid_plot_all<-plot_grid(g1,g2,g3,g4,g5,g6, nrow = 1, ncol = 6, rel_widths = c(1,1,1,1,1,1), rel_heights = c(0.5, 0.5, 0.5, 1,1,1) ,axis = "b")
+grid_plot_all
+
+# Save grid plot: 2700x1000
+
+```
+
+
+```{r}
+
+
+library(magick)
+for(i in species_list){
+  
+  file <- paste0("Figures/Article/hm/co-expr_hm_", i, ".jpeg")
+  hm_fig <- image_read(file)
+  hm_gg <- image_ggplot(hm_fig)
+  
+  new_name <- paste0("hm_gg", "-",i)
+  mv("hm_gg", new_name)
+  
+  
+}
+
+```
+
+
+
+```{r fig.dim = c(40,20)}
+
+library(patchwork)
+
+layout_1 <- c(
+ area(t = 0, l = 0, b = 40, r = 10),
+ area(t = 0, l = 11, b = 40, r = 21),
+ area(t = 0, l = 21, b = 40, r = 31),
+ area(t = 0, l = 31, b = 40, r = 41),
+ area(t = 0, l = 41, b = 40, r = 51),
+ area(t = 0, l = 51, b = 40, r = 61)
+ 
+)
+
+
+# plot(layout_1)
+
+
+`hm_gg-Asp` + `hm_gg-Birch`  +  `hm_gg-Cher` +  `hm_gg-Lodge` + `hm_gg-Nor` + `hm_gg-Scots` + plot_layout(design = layout_1)
+
+# Save with dim 4000x1000
+
+# cowplot::plot_grid(`hm_gg-Asp`, `hm_gg-Birch`,  `hm_gg-Cher`,  `hm_gg-Lodge`, `hm_gg-Nor`, `hm_gg-Scots`, ncol = 6)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

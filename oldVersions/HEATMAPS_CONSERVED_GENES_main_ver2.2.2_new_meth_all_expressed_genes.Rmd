@@ -1,0 +1,243 @@
+---
+title: "Heatmaps - expressed genes"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(ComplexHeatmap)
+library(gplots)
+library(circlize)
+library(gdata)
+
+library(gridtext)
+
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+
+# Legend for heatmap
+col_function_1 <- colorRamp2(c(-3, 0 ,3), c("#0571b0", "#f7f7f7","#ca0020" ))
+lgd_1 = Legend(col_fun = col_function_1, title = "Z-value", title_gp = gpar(fontsize = 20) , legend_height = unit(12, "cm"), grid_width = unit(1, "cm"), labels_gp = gpar(fontsize = 20),at = c(-3, 0 ,3), title_gap =  unit(0.5, "cm"))
+
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+species_full_name <- c("Lodgepole pine","Aspen", "Norway spruce", "Scots pine",    "Birch", "Cherry" )
+species_lat_name <- c("Pinus contorta", "Populus tremula", "Picea abies", "Pinus sylvestris", "Betula pendula", "Prunus avium")
+
+
+cnclust = 4
+
+# Loop
+
+for (i in 1:length(species_list)){
+  
+   # i <- 1
+
+  species <- species_list[i]
+  
+  # Read expression file
+  file <- paste0("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/",species,"Wood_transcriptomics_hm.txt")
+  expressed_genes <- read.delim(file, sep = "\t") %>% 
+    column_to_rownames("Genes") %>%
+    select(contains("1.")) %>% 
+    as.matrix()
+  
+  # Cluster samples (columns)
+  n <- ncol(expressed_genes)
+
+  cdist <- dist(t(expressed_genes), method="euclidean")
+  chc <- hclust(cdist,method="ward.D2")
+  cdendro <- as.dendrogram(chc)
+
+  order <- rep(0, n)
+  h <- colnames(expressed_genes)
+  z <- strsplit(as.character(h), "[.]")
+  h <- unlist(lapply(z,"[",2))
+  h <- as.integer(h)
+  k <- 1
+  samples <- as.numeric(h)
+  
+  for(q in 1:max(samples)) {
+    for(j in 1:n) {
+      if (h[j] == q) {
+        order[j] = k
+        k <- k+1
+      }
+    }
+  }
+  
+  cdendro <- reorder(cdendro, order, agglo.FUN = mean)
+  chc <- as.hclust(cdendro)
+  cct <- cutree(chc, k=cnclust)
+  # plot(chc)
+  
+  ha = HeatmapAnnotation(
+    Samples = cct,
+    col = list(Samples = c("1" = "#FFB000", "2" = "#DC267F","3" = "#3D5A71",  "4" = "#FE6100", "5" = "black", "6" = "grey")),
+    simple_anno_size = unit(0.8, "cm"),
+    show_legend = F,
+    show_annotation_name = F
+  )
+
+  # plot(ha)
+  scaled_data <- t(scale(t(expressed_genes), center = T, scale = T))
+  scaled_data[is.nan(scaled_data)] <-0
+
+  full_name <- species_full_name[i]
+  latin_name <- species_lat_name[i]
+
+  # CREATING HEATMAPS
+  ht_opt$TITLE_PADDING = unit(c(30, 10), "points")
+  ht_opt$message = FALSE
+
+  hm <-  Heatmap(scaled_data ,show_column_names = FALSE,
+                 cluster_columns = chc,
+                 cluster_rows = TRUE,
+                 show_row_dend = FALSE,
+                 column_title =   gt_render(
+        paste0("*",latin_name,"*","<br>","<br>",
+            "(",full_name, ")"  )), 
+                 
+                 column_title_side = "bottom",
+                 show_column_dend = TRUE,
+                 column_dend_height = unit(20, "mm"),
+                 column_title_gp = gpar(fontsize = 25,  fill = "white", border = "white" ),
+                 clustering_distance_rows = "euclidean",
+                 clustering_method_rows = "ward.D2",
+                 # clustering_distance_columns = "euclidean",
+                 # clustering_method_columns = "ward.D2",
+                 show_row_names = FALSE,
+                 heatmap_width = unit(10, "cm"),
+                 heatmap_height = unit(25, "cm"),
+                 # column_dend_reorder = TRUE,
+                 # column_order = order,
+                 top_annotation = ha,
+                 show_heatmap_legend = F,
+                 col = col_function_1
+                 
+  )
+
+  # print(hm)
+  new_name <- as.character(paste0("hm_",species))
+  mv("hm", new_name)
+  
+  
+}
+
+# save figs with dim 442x767 (when printing individual heatmaps)
+
+
+```
+
+```{r}
+
+library(cowplot)
+# plot_grid(g1,g2)
+
+g1 <- grid.grabExpr(print(`hm_Asp`),width = 10, height = 20)
+g2 <- grid.grabExpr(print(`hm_Birch`),width = 10, height = 20)
+g3 <- grid.grabExpr(print(`hm_Cher`),width = 10, height = 20)
+g4 <- grid.grabExpr(print(`hm_Nor`),width = 10, height = 20)
+g5 <- grid.grabExpr(print(`hm_Scots`),width = 10, height = 20)
+g6 <- grid.grabExpr(print(`hm_Lodge`),width = 10, height = 20)
+
+grid_plot_all<-plot_grid(g1,g2,g3,g4,g5,g6, nrow = 1, ncol = 6, rel_widths = c(1,1,1,1,1,1), rel_heights = c(0.5, 0.5, 0.5, 1,1,1) ,axis = "b")
+
+
+grid_plot_all
+
+# Save grid plot: 2700x900
+
+```
+
+
+```{r}
+
+# 
+# library(magick)
+# for(i in species_list){
+#   
+#   file <- paste0("Figures/Article/hm/expressed_hm_", i, ".jpeg")
+#   hm_fig <- image_read(file)
+#   hm_gg <- image_ggplot(hm_fig)
+#   
+#   new_name <- paste0("hm_gg", "-",i)
+#   mv("hm_gg", new_name)
+#   
+#   
+# }
+
+```
+
+
+
+```{r fig.dim = c(40,20)}
+
+# library(patchwork)
+# 
+# `hm_gg-Asp` + `hm_gg-Birch`
+# 
+# layout_1 <- c(
+#  area(t = 0, l = 0, b = 40, r = 10),
+#  area(t = 0, l = 11, b = 40, r = 21),
+#  area(t = 0, l = 21, b = 40, r = 31),
+#  area(t = 0, l = 31, b = 40, r = 41),
+#  area(t = 0, l = 41, b = 40, r = 51),
+#  area(t = 0, l = 51, b = 40, r = 61)
+#  
+# )
+# 
+# 
+# # plot(layout_1)
+# 
+# 
+# `hm_gg-Asp` + `hm_gg-Birch`  +  `hm_gg-Cher` +  `hm_gg-Lodge` + `hm_gg-Nor` + `hm_gg-Scots` + plot_layout(design = layout_1)
+# 
+# # Save with dim 4000x1000
+# 
+# # cowplot::plot_grid(`hm_gg-Asp`, `hm_gg-Birch`,  `hm_gg-Cher`,  `hm_gg-Lodge`, `hm_gg-Nor`, `hm_gg-Scots`, ncol = 6)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -16,8 +16,9 @@ library(gdata)
 
 species1_keyword <- "Asp" 
 species2_keyword <- "Nor" 
+run_version <- "2"
 
-ortholog_group_file <- "~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/Orthogroups.100323.tsv"
+ortholog_group_file <- "Data/DATA/Orthogroups.100323.tsv"
 
 # Parameters
 cor_method <- "pearson" # pearson spearman
@@ -29,8 +30,8 @@ randomize <- "no" # yes no
 # For test-runs
 test_run <- "yes" # "yes" "no"  
 # numb_of_cols <-
-numb_of_rows_1 <- 500
-numb_of_rows_2 <- 600
+numb_of_rows_1 <- 3000
+numb_of_rows_2 <- 3000
 # ------------- Loop --------------
 
 file <- paste0("Data/DATA/orthologs-",species1_keyword,"-",species2_keyword,"-table.RData")
@@ -130,8 +131,8 @@ if (!file.exists(file)){
   
   save(ortho, annot, file = file)
   
-  species1_transcription_txt <- paste0("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/transcriptomicsData/", species1_keyword,"Wood_transcriptomics.txt")
-  species2_transcription_txt <- paste0("~/NMBU/M60-BIAS/EvoTree/githubEvoTree/Data/DATA/transcriptomicsData/", species2_keyword,"Wood_transcriptomics.txt")
+  species1_transcription_txt <- paste0("Data/DATA/transcriptomicsData/", species1_keyword,"Wood_transcriptomics.txt")
+  species2_transcription_txt <- paste0("Data/DATA/transcriptomicsData/", species2_keyword,"Wood_transcriptomics.txt")
   
   if(test_run == "yes"){
     # Only a subset of genes and samples is run
@@ -147,7 +148,8 @@ if (!file.exists(file)){
     filter(Species1 %in% species1_expr$Genes & Species2 %in% species2_expr$Genes)
   
   comparison_RData <- paste0("Data/DATA/comparison-", species1_keyword, "_", species2_keyword, "-", 
-                             cor_sign, cor_method, norm_method, density_thr, randomize, "-table.RData")
+                             cor_sign, cor_method, norm_method, density_thr, randomize, "-table-version_",run_version,".RData")
+  
   
   
   if (!file.exists(comparison_RData)) {
@@ -157,7 +159,7 @@ if (!file.exists(file)){
       species2_expr$Genes <-
         sample(species2_expr$Genes, nrow(species2_expr), FALSE)
     }
-    # Create correlation matrices of expression data
+    # Correlate genes
     species1_net <- cor(t(species1_expr[, -1]), method = cor_method) 
     dimnames(species1_net) <- list(species1_expr$Genes, species1_expr$Genes)               
     
@@ -170,7 +172,7 @@ if (!file.exists(file)){
     }
     
     if (norm_method == "CLR") {
-      #species1_net <- matrix(c(1,0.1,0.2,0.1,1,1,0.2,1,1), nrow = 3, byrow = TRUE)
+
       
       z <- scale(species1_net)
       z[z < 0] <- 0
@@ -181,8 +183,8 @@ if (!file.exists(file)){
       species2_net <- sqrt(t(z) ** 2 + z ** 2)
       
     } else if (norm_method == "MR") {
-      R <- t(apply(species1_net, 1, rank)) #  Creates a matrix with ranked rows. This mean that each row shows the place in the row each value would have had.
-      species1_net <- sqrt(R * t(R)) 
+      R <- t(apply(species1_net, 1, rank)) # Apply rank to correlated genes
+      species1_net <- sqrt(R * t(R)) # Geometric average 
       
       R <- t(apply(species2_net, 1, rank))
       species2_net <- sqrt(R * t(R))
@@ -216,20 +218,23 @@ if (!file.exists(file)){
         cat(i, "\n")
       }
       
+      i <- 18
       # Species 1 -> Species 2
    
-      neigh <- species1_net[ortho$Species1[i],]  
-      neigh <- names(neigh[neigh >= species1_thr]) 
+      neigh <- species1_net[ortho$Species1[i],]  # Named numeric of all genes and their ranked correlations for gene i (entire co-expression network)
+      neigh <- names(neigh[neigh >= species1_thr]) # Retain only the 3% top ranked genes
       
-      ortho_neigh <- species2_net[ortho$Species2[i],] # Finds the ortholog of Species 1s gene and all the interacting genes ranks.
-      ortho_neigh <- names(ortho_neigh[ortho_neigh >= species2_thr]) # Get the names of ortholog neighbours (genes over threshold).
-      ortho_neigh <- ortho$Species1[ortho$Species2 %in% ortho_neigh] # Translate these ortholog names into S1 gene names.
+      ortho_neigh <- species2_net[ortho$Species2[i],] # Co-expression network for gene i in species 2 (the ortholog)
+      ortho_neigh <- names(ortho_neigh[ortho_neigh >= species2_thr]) # Retain only the 3% top ranked genes
+      ortho_neigh <- ortho$Species1[ortho$Species2 %in% ortho_neigh] # Overlapping the the networks, i.e. seeing how many of the species 1 genes have orthologs within ortho.neigh
+
+
       
       N <- nrow(species1_expr) # Number of all possible genes in S1
       m <- length(neigh) # Number of neighbours of gene i - white balls
       n <- N-m # Number of genes that are NOT neighbours - black balls
-      k <- length(ortho_neigh) # Number of ortholog neighbours  - number of balls we draw
-      x <- length(intersect(neigh, ortho_neigh)) # Number of genes that are present in both networks. Must be at least 1.
+      k <- length(unique(ortho_neigh)) # Number of ortholog neighbours  - number of balls we draw
+      x <- length(unique(intersect(neigh, ortho_neigh))) # Number of genes that are present in both networks. Must be at least 1.
       p_val <- 1
       if (x > 1) {
         p_val <- phyper(x-1, m, n, k, lower.tail = FALSE)
@@ -247,13 +252,12 @@ if (!file.exists(file)){
       
       ortho_neigh <- species1_net[ortho$Species1[i],]
       ortho_neigh <- names(ortho_neigh[ortho_neigh >= species1_thr])
-      ortho_neigh <- ortho$Species2[ortho$Species1 %in% ortho_neigh]
-      
+      ortho_neigh <- ortho$Species2[ortho$Species1 %in% ortho_neigh] 
       N <- nrow(species2_expr)
       m <- length(neigh)
       n <- N-m
-      k <- length(ortho_neigh)
-      x <- length(intersect(neigh, ortho_neigh))
+      k <- length(unique(ortho_neigh))
+      x <- length(unique(intersect(neigh, ortho_neigh)))
       p_val <- 1
       
       if (x > 1) {

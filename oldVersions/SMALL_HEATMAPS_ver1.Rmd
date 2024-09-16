@@ -1,0 +1,289 @@
+---
+title: "Upset plots and gene tables"
+author: "Ellen Dimmen Chapple"
+date: "2023-08-25"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(dplyr)
+library(tidyverse)
+library(gdata)
+library(UpSetR)
+library(ggplot2)
+library(viridis)
+library(gridExtra)
+library(ggthemes)
+library(formattable)
+library(DT)
+library(ggplotify)
+
+
+```
+
+# Lists and files
+
+```{r}
+
+
+species_list <- c("Lodge", "Asp", "Nor","Scots","Birch","Cher")
+combo <- data.frame(t(combn(species_list, 2)))
+
+file_list_1 <- c()
+for (i in 1:nrow(combo)){
+  
+  s1 <- combo[i, "X1"]
+  s2 <- combo[i, "X2"]
+  
+  file_name <- paste0("Data/DATA/comparisonFiles/comparison-",s1,"_",s2,"-pearsonMR0.03no-table.RData")
+  file_list_1 <- append(file_list_1, file_name, after = length(file_list_1))
+    
+}
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/",i,"Wood_transcriptomics.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+    
+}
+
+species_list_full_names <- c("Lodgepole pine", "Aspen", "Norway spruce","Scots pine","Birch","Cherry")
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+ortholog_group_file <- read.delim("Data/DATA/Orthogroups.100323.tsv", header = TRUE, sep = "\t")
+
+ortho_general_filtering <- ortholog_group_file %>%
+  mutate(Pinsyl.SHORT.cp.pep = Pinsyl.SHORT.pep) %>% 
+  rename(
+    Aspen = Poptre.SHORT.pep,
+    Birch = Betpen.SHORT.pep,
+    `Norway spruce` = Picabi.SHORT.pep,
+    `Scots pine` = Pinsyl.SHORT.pep,
+    Cherry = Prunavi.SHORT.pep,
+    `Lodgepole pine` = Pinsyl.SHORT.cp.pep,
+    OrthoGroup = Orthogroup) %>% 
+  mutate(Aspen = gsub("Poptre_", "", Aspen)) %>%
+  mutate(Birch = gsub("Betpen_", "", Birch)) %>%
+  mutate(Cherry = gsub("Prunavi_", "", Cherry)) %>% 
+  select(OrthoGroup, all_of(species_list_full_names))
+
+  
+
+```
+
+
+# Making upset plot for all possible ortholog groups 
+
+## All species
+
+```{r}
+# Individual species
+
+ortho_seq_all <- ortho_general_filtering 
+
+rownames(ortho_seq_all) <- ortho_seq_all$OrthoGroup
+ortho_seq_all <- ortho_seq_all %>% 
+  select(-(1)) 
+  
+
+ortho_seq_all[ortho_seq_all == ""] <-0
+ortho_seq_all[ortho_seq_all != 0] <-1
+
+ortho_seq_all <- ortho_seq_all %>% 
+  mutate_if(is.character, as.integer)
+
+
+col_order_singles <- c( "Aspen", "Birch", "Cherry", "Norway spruce", "Scots pine", "Lodgepole pine")
+
+
+```
+
+
+**All possible orthologs - per species**
+
+All orthologs - not necessarily expressed
+
+```{r fig.dim = c(50, 30)}
+# Plot upset plot. Using sets = rev(col_order) gives set order from top to bottom. Remember keep.order = T - if not the set order will be sorted by set size.
+
+# UpsetR
+
+upset_plot <- UpSetR::upset(ortho_seq_all,
+      sets = rev(col_order_singles),
+      queries = list(list(query = intersects, params = list("Aspen", "Birch", "Cherry"), color = "#CF4446FF", active = T),
+                     list(query = intersects, params = list("Scots pine", "Lodgepole pine", "Norway spruce"), color = "#FB9A06FF", active = T)
+                     ,list(query = intersects, params = list("Aspen", "Birch", "Cherry","Scots pine", "Lodgepole pine", "Norway spruce"), color = "#4B0C6BFF", active = T)
+      ),
+      nintersects = 20,
+      keep.order = T,
+      order.by = "freq",
+      decreasing = T,
+      set_size.show = F,
+      text.scale = c(2, 2, 2, 1.5, 2, 2), # c(intersection size title, intersection size tick labels, set size title, set size tick labels, set names, numbers above bars)
+      set_size.scale_max = 18000,
+      # sets.bar.color = "#f1a983",
+      # matrix.color = "#f1a983",
+      point.size = 3,
+      line.size = 1,
+      mb.ratio = c(0.6, 0.4)
+      ) 
+
+upset_plot 
+
+# 
+# complex_upset <- ComplexUpset::upset(ortho_seq_all, colnames(ortho_seq_all),width_ratio=0.3,
+#                                      min_size = 370,
+#                                      queries=list(
+#                                        upset_query(
+#                                        intersect=c("Asp", "Birch", "Cher"),
+#                                        color='#F1605DFF',
+#                                        fill='#F1605DFF'
+#                                      ),
+#                                                                           upset_query(
+#                                        intersect=c("Scots", "Nor", "Lodge"),
+#                                        color='#FEC98DFF',
+#                                        fill='#FEC98DFF',
+#                                        only_components=c('intersections_matrix')
+#                                      )))
+# 
+# 
+# complex_upset
+
+```
+
+
+
+
+
+
+**Number of co-expressed genes per species pair**
+ 
+```{r fig.height= 8, fig.width= 10}
+
+# 
+# new_names <- c(Aspen = "Asp", `Lodgepole pine`= "Lodge", `Norway spruce` = "Nor", `Scots pine` = "Scots", Birch = "Birch")
+# 
+# wider <- number_of_coexpr_per_pair %>% 
+#   pivot_wider(names_from = Species1, values_from = NumberOfCoexpr) 
+# 
+# wider <- wider %>% 
+#   arrange(factor(Species2, levels = c("Asp","Birch", "Cher","Nor", "Scots")))
+# 
+# 
+# wider_df <- wider %>% 
+#   column_to_rownames(var = "Species2") %>% 
+#   # rename(all_of(new_names)) %>%
+#   select(c(Asp, Birch,  Nor, Scots, Lodge))
+#   as.matrix() 
+# 
+# t(wider_df)
+
+# df <- data.frame(
+#   species = c("B ", "C ", "NS ", "SP ", "LP "),
+#   A = c(14746,13140,9986,9841,9955),
+#   B = c(NA,9810,7304, 7740,7474),
+#   C = c( NA, NA, 6569, 6641, 6364),
+#   NS = c( NA, NA, NA, 13795, 13055),
+#   SP = c( NA, NA, NA, NA, 21655))
+# 
+# 
+# df <- df %>% 
+#   column_to_rownames(var = "species") %>% 
+#   as.matrix()
+
+
+library(ComplexHeatmap)
+library(circlize)
+library(viridis)
+
+# reds: col = c("#fdd49e", "#ef6548","#d7301f")
+# purples: col = c("#e0ecf4", "#8c6bb1","#88419d") 
+# oranges: col = c("#fed976", "#fd8d3c","#e31a1c")
+# 
+# 
+# heatmap <- Heatmap(df, cluster_rows = F, cluster_columns = F, col = c("#f7df35", "#fa7e00","#d50102"), 
+#         cell_fun = function(j, i, x, y, width, height, fill) {
+#           if(!(is.na(df[i, j])))
+#             grid.text(sprintf("%.0f", df[i, j]), x, y, gp = gpar(fontsize = 30, fontface = "plain", fontfamily = "sans"))
+# },
+# row_names_side = "left",
+# column_names_rot = 0,
+# column_names_centered = T,
+# column_names_gp = gpar(fontsize = 30,  fontfamily ="sans"),
+# row_names_gp = gpar(fontsize = 30,  fontfamily = "sans"),
+# show_heatmap_legend = F,
+# rect_gp = gpar(col = "white", lwd = 3),
+# na_col = "white"
+# ) 
+# 
+# heatmap
+
+x <- c("Aspen", "Birch", "Cherry", "Norway spruce", "Scots pine")
+y <-c("Lodgepole pine", "Scots pine", "Norway spruce", "Cherry", "Birch")
+data <- expand.grid(X=x, Y=y)
+data$`Co-expressologs` <- c(9955, 7474, 6364, 13055, 21655,9841, 7740, 6641, 13795, NA, 9986, 7304, 6569, NA, NA, 13140, 9816, NA,NA, NA, 14746, NA,NA, NA,NA)
+
+tile <- ggplot(data, aes(x = X, y = Y, fill = `Co-expressologs`)) + geom_tile(color = "grey20", linewidth = 2) + scale_fill_distiller(palette = "YlOrRd", direction = 1 ,na.value = "grey20")+   geom_text(aes(label = `Co-expressologs`), color = "black", size = 22) + theme_minimal() + theme(axis.text = element_text(size = 50, face = "bold"), axis.title = element_blank(), legend.position = "none") 
+
+tile
+
+
+```
+
+
+
+```{r}
+
+library(patchwork)
+library(magick)
+
+hm_fig <- image_read("Figures/Article/hm/hm_numb_of_coexp_full_name.jpeg")
+hm_gg <- image_ggplot(hm_fig)
+
+upset_fig <- image_read("Figures/Article/upset_top20_v2.jpeg")
+upset_gg <- image_ggplot(upset_fig)
+
+# gg_hm <- grid.grabExpr(print(heatmap))
+# gg_upset <- grid.grabExpr(print(upset_plot))
+
+upset_as_gg <- ggplotify::as.ggplot(upset_plot, )
+
+layout <- c(
+  area(t = 0, l = 0 , b = 20, r = 37),
+  area(t = 0, l = 22, b = 8, r = 100)
+
+)
+
+ # plot(layout)
+
+upset_gg + tile + plot_layout(design = layout)
+# + plot_annotation(tag_levels = list(c("D","E"))) & theme( plot.tag = element_text(size = 15))
+
+
+
+
+```
+
+
+
+
+
+
+

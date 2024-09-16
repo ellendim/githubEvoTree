@@ -1,0 +1,588 @@
+---
+title: "Types of cliques"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: spacelab
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(igraph)
+library(ggpattern)
+library(RColorBrewer)
+library(ggplot2)
+library(patchwork)
+library(magick)
+```
+
+
+# Loading necessary files
+
+The file "all_expressed_genes" are all (co-)expressologs between all pairs of species. The initial pre-filtering reduces memory requirements as there are a high number of expressologs with FDR = 1 (before rerun of ComPlEx scripts with fixed bug).
+
+
+```{r}
+# 1) Load expressologs (filtering reduces memory requirements significantly)
+expressologs <- read.delim("Data/DATA/textFiles/all_expressed_genes.txt", sep = " ") %>%
+  filter(MaxpVal < 0.9)
+
+load("Data/DATA/ones_and_zeros_all.RData")
+df_with_sums <- ones_and_zeros_all %>%
+  mutate(Angiosperms = rowSums(. [1:3])) %>%
+  mutate(Cross = rowSums(. [4:12]))%>%
+  mutate(Gymnosperms = rowSums(. [13:15])) %>%
+  mutate(Conserved = rowSums(. [1:15]))%>%
+  filter(Conserved > 0)
+
+# 3) Refilter the conserved orthogroups to adjust for the initial p-value filtering and vectorise.
+conserved_ogs <- df_with_sums%>% 
+  filter(rownames(df_with_sums) %in% expressologs$OrthologGroup)
+
+
+cons_ogs <- rownames(conserved_ogs)
+cat("Number of ortholog groups that have at least one (co-)expressolog after initial filtering: ", length(cons_ogs))
+
+
+```
+
+# Identifying orthogroups with complete cliques (run once + save)
+
+This step identifies which orthogroups have complete cliques and the number of cliques per orthogroup. This step can be skipped after output file is saved. Furthermore, this step is not strictly necessary for clique identification but is useful to estimate runtime of code and if adjustments are required.
+
+```{r eval=FALSE, include=FALSE}
+# 1) Loop over all relevant (have at least 1 (co-)expressolog) orthogroups and count the number of max cliques that contain at least 6 members.
+
+numb_of_cliques_per_og <- c()
+
+for (g in cons_ogs) {
+  print(g)
+  # g <- "OG0001993"
+  
+  expressologs_g <- expressologs %>% 
+    filter(OrthologGroup == g) 
+  
+  expressologs_g <- expressologs_g %>% 
+    mutate(UGeneSpecies1 = paste0(expressologs_g$Species1, "-", expressologs_g$GeneSpecies1),
+           UGeneSpecies2 = paste0(expressologs_g$Species2, "-", expressologs_g$GeneSpecies2))
+  
+  nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+  
+  edges <- data.frame(from = expressologs_g$UGeneSpecies1, 
+                      to = expressologs_g$UGeneSpecies2)
+  
+  
+  net <- graph_from_data_frame(edges, directed = FALSE, vertices = nodes)
+  
+  # largest_clique <- largest_weighted_cliques(net)
+  largest_clique <- max_cliques(net, min = 3)
+
+  numb_of_cliques_per_og <- rbind(numb_of_cliques_per_og, data.frame(Orthogroup = g,
+                                                                     numbCliques = length(largest_clique),
+                                                                     minSize = min(lengths(largest_clique)),
+                                                                     maxSize = max(lengths(largest_clique))))
+ 
+  
+  
+  # for(i in 1:length(largest_clique)){
+  # 
+  #   clique <- largest_clique[[i]]
+  #   print(length(clique))
+  # }
+  # 
+   
+}
+
+# 2) Remove orthogroups with no cliques (min clique size = 3). The loop simply goes through all orthogroups and counts the number of cliques that contain at least three members. We therefore need to remove all orthogroups with zero cliques.
+numb_of_cliques_per_og <- numb_of_cliques_per_og %>% 
+  arrange(desc(numbCliques)) %>% 
+  filter(numbCliques > 0) 
+
+paste0("Number of orthologs with at least one clique (3 to 6 members): ", length(unique(numb_of_cliques_per_og$Orthogroup)))
+
+# 3) Vectorise and save! 
+cons_og_red <- numb_of_cliques_per_og$Orthogroup
+save(cons_og_red, file = "Data/Data/conserved_orthogroups_reduced.RData")
+
+ggplot(numb_of_cliques_per_og, aes(x = log10(numbCliques))) + geom_density(fill="forestgreen", color="grey20", linewidth = 1 ,alpha=0.5) + labs(x = "Number of cliques per OG (log10)", title = "Distribution of cliques by size") + xlim(-0.5,7) +  theme_bw() + theme(plot.title = element_text(hjust = 0.5, size = 20) )
+
+```
+
+# Clique identification: 3-6 members (run + save)
+
+Cliques are identified in a similar loop as in previous chunk.
+N.B! If all orthogroups are used (not only orthogroups with complete cliques) then the first if-statement needs to used (check if works).
+
+Outside of loop:
+- initiate list
+- set max clique number (existing parameters ensure that all significant cliques are included)
+
+Outer loop iterates over all orthogroups:
+- creates a network of all (co-)expressologs in the orthogroup, linking (co-)expressologs
+- identifies all cliques that include all 6 species
+- for the larger orthogroups, only a subset of cliques are saved (input value) - reduces runtime, but needs to include all orthogroups with complete cliques
+
+
+Inner loop iterates over all (or subset) of cliques:
+- saves names of genes and species within clique 
+- filters the orthogroup to only contain genes within a clique
+- adds an ID-tag to each clique 
+- append the clique-containing orthogroup subset to a list
+
+The list is unpacked into a data frame before the max p-values (FDR) are -log transformed, and the sum of each clique is calculated.
+
+```{r eval=FALSE, include=FALSE}
+
+
+load("Data/DATA/conserved_orthogroups_reduced.RData")
+expressologs_from_max_cliques <- list()
+max_numb_of_cliques <- 5500
+
+for (g in cons_og_red) {
+  print(g)
+  
+   g <- cons_og_red[5]
+  
+  expressologs_g <- expressologs %>% 
+    filter(OrthologGroup == g) 
+  
+  expressologs_g <- expressologs_g %>% 
+    mutate(UGeneSpecies1 = paste0(expressologs_g$Species1, "-", expressologs_g$GeneSpecies1),
+           UGeneSpecies2 = paste0(expressologs_g$Species2, "-", expressologs_g$GeneSpecies2))
+  
+  nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+  
+  edges <- data.frame(from = expressologs_g$UGeneSpecies1, 
+                      to = expressologs_g$UGeneSpecies2)
+ 
+  
+  net <- graph_from_data_frame(edges, directed = FALSE, vertices = nodes)
+  # 
+  # n <- round((length(edges$from)/2), digits = 0)
+  # m <- length(edges$from)-n
+  # 
+  # plot(net,
+  #      
+  #      layout = layout_randomly,
+  #      vertex.size= 10,
+  #      vertex.color= c(rep("#ffc000", n = n), rep("#CF4446FF", n = m)), 
+  #      vertex.frame.width = 2,
+  #      vertex.frame.color = "grey20",
+  #      edge.width = 0.2, 
+  #      edge.color = "grey50", 
+  #      edge.lty = "solid", 
+  #      margin = 0,
+  #      vertex.label = NA)
+  
+
+  largest_clique <- max_cliques(net, min = 3)
+  
+  # if(length(largest_clique) == 0){
+  #   break
+  # }
+
+  if(length(largest_clique) > max_numb_of_cliques){
+      largest_clique_red <- largest_clique[1:max_numb_of_cliques]
+    }else{largest_clique_red <- largest_clique}
+    
+    
+  for(c in 1:length(largest_clique_red)){
+    c <- 1
+          if (c %% 500 == 0) {
+        cat(c, "\n")
+      }
+
+
+    clique <- largest_clique[[c]]
+    clique_name <- attr(clique, "names")
+
+    clique_species <- str_split_fixed(clique_name, "-", n = 2)[,1]
+    clique_genes <-  str_split_fixed(clique_name, "-", n = 2)[,2]
+   
+  # # --------------- Code for creating network with only the clique-members.------------
+
+# clique_genes_df <- expressologs_g %>%
+#   filter(UGeneSpecies1 %in% clique_name & UGeneSpecies2 %in% clique_name)
+# 
+# clique_edges <- data.frame(from = clique_genes_df$UGeneSpecies1,
+#                            to = clique_genes_df$UGeneSpecies2)
+# 
+# clique_nodes <- data.frame(name = unique(c(clique_genes_df$UGeneSpecies1, clique_genes_df$UGeneSpecies2)))
+# 
+# clique_net <- graph_from_data_frame(clique_edges, directed = FALSE, vertices = clique_nodes)
+# 
+# 
+#  plot(clique_net, layout =  layout_in_circle, vertex.size= 30,
+#    vertex.color="#fc9272", vertex.frame.width = 2.5, edge.width = 1, edge.color = "#0E2841", edge.lty = "solid", margin = 0.1, vertex.label.cex =0.8, vertex.label.cex = 0.8, vertex.label.family = "sans", vertex.label.font = 2, vertex.label.dist= 2)
+
+  # If vertex labels are wanted: vertex.label.cex =0.8, vertex.label.family = "sans", vertex.label.font = 2,vertex.label.dist= 3, if not:  vertex.label =NA
+
+
+      expressologs_in_clique <- expressologs_g %>%
+        filter(UGeneSpecies1 %in% clique_name & UGeneSpecies2 %in% clique_name) %>%
+        select(c(1:5, 8)) %>% 
+        mutate(cliqueID = paste0(g,"_" ,c))
+        
+        
+
+      expressologs_from_max_cliques <- append(expressologs_from_max_cliques, list(expressologs_in_clique))
+
+  }
+
+}
+
+clique_genes_unlisted <- plyr::ldply(expressologs_from_max_cliques)
+
+clique_genes_unlisted_prefilter <- clique_genes_unlisted %>% 
+  group_by(cliqueID) %>% 
+  mutate(MaxpValNegLog10 = -log10(MaxpVal)) %>% 
+  mutate(NegLog10CliqueSum = sum(MaxpValNegLog10)) %>% 
+  ungroup()
+
+
+cat("Number of ortholog groups that have: " , "\n","- at least one (co-)expressolog:", length(cons_ogs), "\n","- at least one clique (3 to 6 member): ", length(cons_og_red), "\n" )
+
+save(clique_genes_unlisted_prefilter, file = "Data/DATA/clique_genes_prefiltered.RData")
+
+
+```
+
+
+# Identifing complete and partial cliques based on p-value or clique weight sum
+
+
+```{r}
+
+load("Data/DATA/clique_genes_prefiltered.RData") # Cliques identified in previous chunk
+
+weighted_max_cliques <- clique_genes_unlisted_prefilter %>% 
+  mutate(species_pair = paste0(Species1, Species2))
+
+speciesPairs <- tibble(SpeciesPair = weighted_max_cliques %>% distinct(species_pair) %>% pull(species_pair),
+                       SpeciesPairClade = c("Cross", "Cross", "Angio", "Angio", "Angio", "Cross", "Cross", "Cross",
+                       "Cross", "Gymno", "Gymno", "Gymno", "Cross", "Cross", "Cross"))
+
+
+weighted_max_cliques <-  left_join(weighted_max_cliques , speciesPairs, by = join_by("species_pair" == "SpeciesPair" ))
+weighted_max_cliques <- weighted_max_cliques %>% 
+  mutate(Clade = paste0(SpeciesPairClade, "-sum" ))
+
+
+# speciesPairs
+
+```
+
+## Based on p-value
+
+<br>
+<br>
+
+Here a threshold is applied for each ortholog pair. Cliques that have retained a certain number and combination of gene pairs are counted. This allows for the identification of:
+
+- complete cliques (six-membered)
+- clade-specific and clade-enhanced cliques (only the three members of a clique)
+- various types of partial cliques
+
+N.B! Clique size is the number of edges, and not number of members.
+The difference between a clade-specific and clade-enhanced is that a clade-specific clique will contain genes not expressed amongst the other pairs that the clade-members. A clade-enhanced clique will only have significant edges amongst the clade members. 
+
+
+
+```{r }
+
+clique_3_expr <- image_read("Figures/Article/Cliques/three_membered_expr.jpeg")
+clique_3_expr <- image_ggplot(clique_3_expr)
+
+
+clique_3 <- image_read("Figures/Article/Cliques/three_membered.jpeg")
+clique_3 <- image_ggplot(clique_3)
+clique_3+clique_3_expr
+
+
+```
+
+<br>
+<br>
+The original clique size is retained so that the cliques retained after filtering can be identified as enhanced or specific. By plotting the distribution before and after filtering we also see the spread of clique sizes (note: after filtering there are several partial cliques).
+
+```{r}
+
+# ------------------ Filtering with p-value -----------------------
+
+p_thr <- 0.1 # Co-expressolog is an expressolog with significant neighbourhood overlap at FDR < 0.1
+
+
+weighted_max_cliques_filtered <- weighted_max_cliques %>%
+  group_by(cliqueID) %>% 
+  mutate(OriginalCliqueSize = n()) %>%  
+  mutate(OriginalCliqueSize = factor(OriginalCliqueSize))
+
+hist_1 <- ggplot(weighted_max_cliques_filtered, aes(x = OriginalCliqueSize)) + geom_bar(fill = "forestgreen", width =  0.2) +
+  labs(title = "Distribution of clique sizes (pre-filtering) ", x = "Clique size (number of edges)",y = "Number of cliques") +
+  theme_classic() + 
+  theme(plot.title =  element_text(hjust = 0.5, size = 10), plot.subtitle = element_text(hjust = 0.8, size = 15))
+
+weighted_max_cliques_filtered <- weighted_max_cliques_filtered %>%
+  filter(MaxpVal < p_thr) %>%
+  mutate(cliqueSize = n()) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = SpeciesPairClade, values_from = SpeciesPairClade) %>% 
+  mutate(cliqueSize = factor(cliqueSize))
+
+hist_2 <- ggplot(weighted_max_cliques_filtered, aes(x = cliqueSize)) + geom_bar( fill = "forestgreen") +
+  labs(title = "Distribution of clique sizes (FDR < 0.1)  ", x = "Clique size (number of edges)",y = "Number of cliques") + 
+  theme_classic() + 
+  theme(plot.title =  element_text(hjust = 0.5, size = 10), plot.subtitle = element_text(hjust = 0.5, size = 15))
+
+
+
+weighted_max_cliques_filtered$Angio[is.na(weighted_max_cliques_filtered$Angio)] <- 0
+weighted_max_cliques_filtered$Angio[weighted_max_cliques_filtered$Angio != 0] <-1
+weighted_max_cliques_filtered$Gymno[is.na(weighted_max_cliques_filtered$Gymno)] <-0
+weighted_max_cliques_filtered$Gymno[weighted_max_cliques_filtered$Gymno != 0] <-1
+weighted_max_cliques_filtered$Cross[is.na(weighted_max_cliques_filtered$Cross)] <-0
+weighted_max_cliques_filtered$Cross[weighted_max_cliques_filtered$Cross != 0] <-1
+
+weighted_max_cliques_filtered <- weighted_max_cliques_filtered %>% 
+   mutate_at(c("Angio", "Gymno", "Cross"), as.numeric) %>% 
+    mutate(UGeneSpecies1 = paste0(weighted_max_cliques_filtered$Species1, "-", weighted_max_cliques_filtered$GeneSpecies1),
+           UGeneSpecies2 = paste0(weighted_max_cliques_filtered$Species2, "-", weighted_max_cliques_filtered$GeneSpecies2), .before = species_pair)
+
+
+hist_1|hist_2
+
+
+```
+
+
+```{r}
+
+
+# DIFFERENTIATED GENES
+
+a = 3 # number of angiosperm pairs
+g = 3 # number of gymnosperm pairs
+c = 0 # number of crossed pairs
+
+differentiated_cliques <- weighted_max_cliques_filtered %>% 
+  group_by(cliqueID) %>% 
+  filter(sum(Angio) == a & sum(Gymno) == g, Cross == c) %>% 
+  mutate(OriginalCliqueSize = factor(OriginalCliqueSize, levels = c("3", "6", "10", "15")))
+
+cat("Number of differentiated orthogroups using p-value filtering: ", 
+length(unique(differentiated_cliques$OrthologGroup)))
+
+# CLADE-SPECIFIC + CLADE-ENHANCED
+
+a = 3 # number of angiosperm pairs
+g = 0 # number of gymnosperm pairs
+c = 0 # number of crossed pairs
+
+angio_pval <- weighted_max_cliques_filtered %>% 
+  group_by(cliqueID) %>% 
+  filter(sum(Angio) == a & sum(Gymno) == g, Cross == c) %>% 
+  mutate(OriginalCliqueSize = factor(OriginalCliqueSize, levels = c("3", "6", "10", "15")))
+
+length(unique(angio_pval$OrthologGroup))  
+
+
+a = 0 # number of angiosperm pairs
+g = 3 # number of gymnosperm pairs
+c = 0 # number of crossed pairs
+
+gymno_pval <- weighted_max_cliques_filtered %>% 
+  group_by(cliqueID) %>% 
+  filter(sum(Angio) == a & sum(Gymno) == g, Cross == c) %>% 
+  mutate(OriginalCliqueSize = factor(OriginalCliqueSize, levels = c("3", "6", "10", "15")))
+
+length(unique(gymno_pval$OrthologGroup))  
+
+
+
+
+```
+
+
+# Based on clique sum
+
+<br>
+<br>
+
+When looking for sub-cliques the total weight of the sub-clique needs to be higher (i.e. collectively lower p-values) than the remaining connections in the main clique. The same types of cliques as above can be identified but partial cliques need to be identified based number of members... need a method for this!
+
+```{r}
+
+weighted_max_cliques_filtered <- weighted_max_cliques %>%
+  group_by(cliqueID) %>% 
+  mutate(OriginalCliqueSize = n()) %>%
+  pivot_wider(names_from = Clade, values_from = MaxpValNegLog10) 
+
+weighted_max_cliques_filtered <- replace_na(weighted_max_cliques_filtered, list(`Angio-sum` = 0, `Gymno-sum` = 0, `Cross-sum` =0))
+
+weighted_max_cliques_filtered <- weighted_max_cliques_filtered %>% 
+  mutate(AngioSum = sum(`Angio-sum`)) %>% 
+  mutate(GymnoSum = sum(`Gymno-sum`)) %>% 
+  mutate(CrossSum = sum(`Cross-sum`)) %>% 
+  pivot_wider(names_from = SpeciesPairClade, values_from = SpeciesPairClade)
+  
+weighted_max_cliques_filtered$Angio[is.na(weighted_max_cliques_filtered$Angio)] <- 0
+weighted_max_cliques_filtered$Angio[weighted_max_cliques_filtered$Angio != 0] <-1
+weighted_max_cliques_filtered$Gymno[is.na(weighted_max_cliques_filtered$Gymno)] <-0
+weighted_max_cliques_filtered$Gymno[weighted_max_cliques_filtered$Gymno != 0] <-1
+weighted_max_cliques_filtered$Cross[is.na(weighted_max_cliques_filtered$Cross)] <-0
+weighted_max_cliques_filtered$Cross[weighted_max_cliques_filtered$Cross != 0] <-1
+
+weighted_max_cliques_filtered <- weighted_max_cliques_filtered %>% 
+   mutate_at(c("Angio", "Gymno", "Cross"), as.numeric) %>% 
+  ungroup() %>% 
+    mutate(UGeneSpecies1 = paste0(weighted_max_cliques_filtered$Species1, "-", weighted_max_cliques_filtered$GeneSpecies1),
+           UGeneSpecies2 = paste0(weighted_max_cliques_filtered$Species2, "-", weighted_max_cliques_filtered$GeneSpecies2), .before = species_pair)
+  
+# save(weighted_max_cliques_filtered, file = "Data/DATA/weighted_max_cliques_cliqueSum.RData")
+
+```
+
+
+
+```{r}
+
+# load("Data/DATA/weighted_max_cliques_cliqueSum.RData")
+
+clade1Sum <-  3 
+clade2Sum <-  3 
+crossSum <- c(1:15)
+
+vector <- c()
+for(i in crossSum){
+  
+  # i <- 1
+
+   df <- weighted_max_cliques_filtered %>%
+    filter(AngioSum >= clade1Sum & GymnoSum >= clade2Sum & CrossSum < i) %>%
+    group_by(cliqueID) %>%
+    filter(sum(Angio) == 3 & sum(Gymno) == 3)
+
+  q <- length(unique(df$OrthologGroup))
+
+  vector <- rbind(vector, data.frame(crossSum = i, number_of_og = q))
+    
+}
+
+ggplot(vector, aes(x =crossSum , y =number_of_og  )) + geom_line(color = "black", linewidth = 2) + geom_line(aes(x = 9), color = "red") + scale_x_continuous(n.breaks = 16, limits = c(1, 16)) + scale_y_continuous(n.breaks = 10, limits = c(0,140))+labs(title = "Differentiated orthogroups based on sum of crossed pairs", x = "Sum (crossed pairs)", y = "Number of orthogroups") + theme_classic() + theme(plot.title =  element_text(hjust = 0.5, size = 10))
+
+# DIFFERENTIATED GENES
+
+crossSum <- 9 
+differentiated_cliques <- weighted_max_cliques_filtered %>% 
+  filter(AngioSum >= clade1Sum & GymnoSum >= clade2Sum & CrossSum < crossSum) %>% 
+  group_by(cliqueID) %>% 
+  filter(sum(Angio) == 3 & sum(Gymno) == 3)
+
+length(unique(differentiated_cliques$OrthologGroup))
+
+# CLADE-SPECIFIC + CLADE-ENHANCED
+
+clade1Sum <-  3 
+clade2Sum <-  3 
+crossSum <- 9
+
+
+ angio <- weighted_max_cliques_filtered %>% 
+  filter(AngioSum >= clade1Sum & GymnoSum < clade2Sum & CrossSum < crossSum) %>% 
+  group_by(cliqueID) %>% 
+  filter(sum(Angio) == 3) %>% 
+  mutate(OriginalCliqueSize = factor(OriginalCliqueSize, levels = c("3", "6", "10", "15")))
+
+length(unique(angio$OrthologGroup))
+
+
+  gymno <- weighted_max_cliques_filtered %>% 
+  filter(AngioSum < clade1Sum & GymnoSum >= clade2Sum & CrossSum < crossSum) %>% 
+  group_by(cliqueID) %>% 
+  filter(sum(Gymno) == 3) %>% 
+  mutate(OriginalCliqueSize = factor(OriginalCliqueSize, levels = c("3", "6", "10", "15")))
+
+length(unique(gymno$OrthologGroup))
+
+
+```
+
+```{r}
+# Plotting the distribution of the various cliques, e.g. are 4-membered cliques typically 3+1 or 2+2?
+
+plot_1 <- ggplot(angio_pval, aes(x = OriginalCliqueSize)) + 
+  geom_bar(fill = "orange", width = 0.3) +
+  labs(title = "Angioperms ", subtitle = "p-value",x = "Original clique size (number of edges)",y = "Number of cliques") + 
+  theme_classic() + 
+  theme(plot.title =  element_text(hjust = 0.5, size = 15), plot.subtitle = element_text(hjust = 0.5, size = 12))+
+  ylim(0,20000)
+
+plot_2 <- ggplot(gymno_pval, aes(x = OriginalCliqueSize)) + 
+  geom_bar(fill = "orange", width = 0.3) +
+  labs(title = "Gymnosperms", subtitle = "p-value",x = "Original clique size (number of edges)",y = "Number of cliques") + 
+  theme_classic() +
+  theme(plot.title =  element_text(hjust = 0.5, size = 15), plot.subtitle = element_text(hjust = 0.5, size = 12)) +
+  ylim(0,40000)
+
+
+
+plot_3 <- ggplot(angio, aes(x = OriginalCliqueSize)) + 
+  geom_bar(fill = "orange", width = 0.3) + 
+  labs(title = "Angiosperms",subtitle ="weight of clique", x = "Original clique size (number of edges)",y = "Number of cliques") + 
+  theme_classic() +  
+  theme(plot.title =  element_text(hjust = 0.5, size = 15), plot.subtitle = element_text(hjust = 0.5, size = 12)) +
+  ylim(0,20000)
+
+
+
+plot_4 <- ggplot(gymno, aes(x = OriginalCliqueSize)) + 
+  geom_bar(fill = "orange", width = 0.3) + 
+  labs(title = "Gymnosperms",subtitle = "weight of clique" ,x = "Original clique size (number of edges)",y = "Number of cliques") +
+  theme_classic() + 
+  theme(plot.title =  element_text(hjust = 0.5, size = 15), plot.subtitle = element_text(hjust = 0.5, size = 12)) +
+  ylim(0,40000)
+
+
+
+
+```
+
+
+
+
+```{r fig.height= 12, fig.width= 10}
+
+
+p <-(plot_1|plot_3)/(plot_2|plot_4) 
+p + plot_annotation(tag_levels = "A", title = "Cliques", theme  = theme(plot.title =  element_text(size = 20, hjust = 0.5, vjust = 1.5)))
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,547 @@
+---
+title: "Different types of cliques"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+
+
+```{r message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(igraph)
+library(ggpattern)
+library(RColorBrewer)
+library(ggplot2)
+
+```
+
+# Distribution of the various clique-sizes (3 to 6 members)
+
+```{r fig.height=6, fig.width=11}
+load( "Data/DATA/weighted_max_cliques_cliqueSum.RData")
+
+weighted_max_cliques_filtered <- weighted_max_cliques_filtered %>% 
+  mutate(cliqueSize = factor(cliqueSize))
+
+ggplot(weighted_max_cliques_filtered, aes(x = cliqueSize)) + geom_bar(fill = "#35B779FF", color = "grey9") + labs(title = "Clique size distribution") +  theme_minimal() + theme(plot.title = element_text(hjust = 0.5, vjust = 1, size = 20)) + geom_text(stat = 'count', aes(label = after_stat(count)), position = position_dodge(width = 0.6), vjust = -0.7,  size = 4.3, fontface = 1) 
+
+
+# Clique size is the number of edges and not number of members!
+
+
+three_membered_cliques <- weighted_max_cliques_filtered %>% 
+  filter(cliqueSize == 3)
+
+five_membered_cliques <- weighted_max_cliques_filtered %>% 
+  filter(cliqueSize == 10)
+
+four_membered_cliques <- weighted_max_cliques_filtered %>% 
+  filter(cliqueSize == 6)
+
+six_membered_cliques <- weighted_max_cliques_filtered %>% 
+  filter(cliqueSize == 15)
+
+
+cat(" Number of orthogroups with at least one: ", "\n", "- three-memebered clique: ",length(unique(three_membered_cliques$OrthologGroup)), "\n", "- four-membered clique: ", length(unique(four_membered_cliques$OrthologGroup)), "\n","- five-membered clique: ", length(unique(five_membered_cliques$OrthologGroup)),"\n","- six-membered clique: ", length(unique(six_membered_cliques$OrthologGroup))
+       
+       )
+
+```
+
+
+The unique clique sizes are 3, 4, 5 and 6 members - these can have different compositions of pairs, i.e clade pairs or crossed pairs.
+
+Three-membered cliques: can be only clade-specific species, or can be mixed (1 non-clade species).
+
+Four-membered cliques: will be mixed, but does it consist of 2+2 clade-specific species or 3 clade-specific + 1 outsider.
+
+Five-membered cliques: 3 clade-specific + 2 outsiders (only).
+<br>
+<br>
+
+```{r eval=FALSE, include=FALSE}
+# Three-membered clique
+
+clique_type_vect <- c()
+
+for(clq in unique(three_membered_cliques$cliqueID)){
+    print(clq)
+  # clq <- "OG0000001_2"
+  
+  clique <- three_membered_cliques %>% 
+    filter(cliqueID == clq)
+  
+  xed_sum <- sum(clique$Cross)
+  
+  if(xed_sum == 0){
+    clique_type <- "3+0"
+  } else{clique_type <- "2+1"}
+  
+  clique_ext <- data.frame(cliqueType = rep(clique_type, nrow(clique)))
+
+  
+  clique_type_vect <- rbind(clique_type_vect, clique_ext)
+  
+
+      
+}
+  
+three_membered_cliques_dstrbn <- cbind(three_membered_cliques, clique_type_vect)
+# save(three_membered_cliques_dstrbn, file = "Data/DATA/three_membered_cliques.RData")
+
+
+
+```
+
+
+```{r eval=FALSE, include=FALSE}
+
+# Four-membered clique
+
+clique_type_vect <- c()
+
+for(clq in unique(four_membered_cliques$cliqueID)){
+  
+  print(clq)
+  # clq <- "OG0000001_22"
+  
+  clique <- four_membered_cliques %>% 
+    filter(cliqueID == clq)
+  
+  xed_sum <- sum(clique$Cross)
+  
+  if(xed_sum == 3){
+    clique_type <- "3+1"
+  } else{clique_type <- "2+2"}
+  
+  clique_ext <- cbind(clique, data.frame(
+    cliqueType = rep(clique_type, nrow(clique))
+    
+  ))
+  
+  
+  clique_ext <- data.frame(cliqueType = rep(clique_type, nrow(clique)))
+  clique_type_vect <- rbind(clique_type_vect, clique_ext)
+  
+}
+
+four_membered_cliques_dstrbn <- cbind(four_membered_cliques, clique_type_vect)
+# save(four_membered_cliques_dstrbn, file = "Data/DATA/four_membered_cliques.RData")
+
+```
+
+
+```{r fig.height=7, fig.width=11, message=FALSE, warning=FALSE}
+
+load("Data/DATA/three_membered_cliques.RData")
+load("Data/DATA/four_membered_cliques.RData")
+
+myPalette <- brewer.pal(5, "Set1")
+pie_df_1 <- data.frame(cliqueType = unique(three_membered_cliques_dstrbn$cliqueType),
+                      three_membered_cliques_dstrbn %>%  count(cliqueType) %>% select(n))
+
+pie_df_1 <- pie_df_1 %>% 
+  arrange(desc(cliqueType)) %>%
+  mutate(prop = n / sum(pie_df_1$n) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+
+pie_df_2 <- data.frame(cliqueType = unique(four_membered_cliques_dstrbn$cliqueType),
+                     four_membered_cliques_dstrbn %>%  count(cliqueType) %>% select(n))
+
+pie_df_2 <- pie_df_2 %>% 
+  arrange(desc(cliqueType)) %>%
+  mutate(prop = n / sum(pie_df_2$n) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop ) 
+
+pie_1 <- ggplot(pie_df_1, aes(x="", y=prop, fill=cliqueType)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) + theme_void() + geom_text(aes(y = ypos, label = paste0(round(prop, digits =1), "%")), size = 5) + scale_fill_brewer(palette = "YlOrRd") + labs(title = "Three-membered cliques") + theme( plot.title = element_text(hjust = 0.5, size = 20))
+
+pie_2 <- ggplot(pie_df_2, aes(x="", y=prop, fill=cliqueType)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) + theme_void() + geom_text(aes(y = ypos, label = paste0(round(prop, digits =1), "%")), size = 5) + scale_fill_brewer(palette = "PuRd") + labs(title = "Four-membered cliques") + theme(plot.title = element_text(hjust = 0.5, size = 20))
+
+library(patchwork)
+library(magick)
+
+clique_3_0 <- image_read("Figures/Article/Cliques/_3_pluss_none.jpeg")
+clique_3_0 <- image_ggplot(clique_3_0)
+
+clique_2_1 <- image_read("Figures/Article/Cliques/_two_pluss_one.jpeg")
+clique_2_1 <- image_ggplot(clique_2_1)
+
+
+clique_3_1 <- image_read("Figures/Article/Cliques/_three_pluss_one.jpeg")
+clique_3_1 <- image_ggplot(clique_3_1)
+
+clique_2_2 <- image_read("Figures/Article/Cliques/_two_pluss_two.jpeg")
+clique_2_2 <- image_ggplot(clique_2_2)
+
+
+
+(clique_2_1/clique_3_0 | pie_1 | plot_spacer()) / (plot_spacer()| pie_2 |clique_2_2/clique_3_1)
+
+
+
+```
+
+<br>
+<br>
+
+
+# Overview over different cliques
+
+<br>
+
+First identify all cliques in each orthogroup with 3-6 members.
+Use the p-values as edge weights, and apply a threshold for each weight OR for the sum of a cliques weight. Re-identify complete cliques based on number of remaining members.
+<br>
+<br>
+
+## Three-membered cliques
+<br>
+
+```{r}
+col_1 <-"#FFB000"
+col_2 <- "#CF4446FF"
+
+thicc <- 3
+thin <- 1
+
+```
+
+
+
+```{r}
+  g <- "OG0000001_4"
+  
+  expressologs_g <- three_membered_cliques%>% 
+    filter(cliqueID == g) 
+
+  # # --------------- Code for creating network with only the clique-members.------------
+
+clique_edges <- data.frame(from = expressologs_g$UGeneSpecies1,
+                           to = expressologs_g$UGeneSpecies2)
+
+clique_nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+larger <- data.frame(name = c("Empty_1", "Empty_2", "Empty_3"))
+
+clique_nodes <- rbind(clique_nodes, larger)
+clique_net <- graph_from_data_frame(clique_edges, directed = FALSE, vertices = clique_nodes)
+
+
+plot_2 <- plot(clique_net, 
+               layout =  layout_in_circle, 
+               vertex.size= 30,
+               vertex.color = c(rep(col_1, 3), rep(col_2, 3)),
+               vertex.frame.width = 2.5, 
+               edge.width = 3, 
+               edge.color = "#0E2841", 
+               edge.lty = c("solid", "solid", "dashed"), 
+               margin = 0.1, 
+               vertex.label = NA) + title(main = "Unique (weight)")
+
+
+g <- "OG0000001_91"
+
+expressologs_g <- six_membered_cliques %>% 
+  filter(cliqueID == g) 
+
+clique_edges <- data.frame(from = expressologs_g$UGeneSpecies1,
+                           to = expressologs_g$UGeneSpecies2)
+
+clique_nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+
+clique_net <- graph_from_data_frame(clique_edges, directed = FALSE, vertices = clique_nodes)
+
+
+plot_1 <- plot(clique_net, 
+               layout =  layout_in_circle, 
+               vertex.size= 30,
+               vertex.color = c(rep(col_1, 3), rep(col_2, 3)),
+               vertex.frame.width = 2.5, 
+               edge.width = c(rep(thicc,2), rep(thin,3), thicc ,rep(thin, 9)), 
+               edge.color = "#0E2841", 
+               # edge.label = c(1:15),
+               # vertex.label = c(1:6),
+               edge.lty = c(rep("solid",2), rep("dashed",3), "solid", rep("dashed", 9)),
+               margin = 0.1,
+               vertex.label = NA) + title(main = "Three-membered")
+
+
+
+```
+
+## Four- and five-membered cliques
+<br>
+
+```{r}
+
+    g <- "OG0000001_20"
+  
+  expressologs_g <- four_membered_cliques %>% 
+    filter(cliqueID == g) 
+
+clique_edges <- data.frame(from = expressologs_g$UGeneSpecies1,
+                           to = expressologs_g$UGeneSpecies2)
+
+clique_nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+larger <- data.frame(name = c("Empty_1", "Empty_2"))
+
+clique_nodes <- rbind(clique_nodes, larger)
+clique_net <- graph_from_data_frame(clique_edges, directed = FALSE, vertices = clique_nodes)
+
+
+plot_3 <- plot(clique_net, 
+               layout =  layout_in_circle, 
+               vertex.size= 30,
+               vertex.color = c(rep(col_1, 3), rep(col_2, 3)),
+               vertex.frame.width = 2.5, 
+               edge.width = 3, 
+               edge.color = "#0E2841", 
+               edge.lty = "solid", 
+               margin = 0.1, 
+               vertex.label = NA) + title(main = "Four-membered")
+
+g <- "OG0000001_91"
+
+expressologs_g <- six_membered_cliques %>% 
+  filter(cliqueID == g) 
+
+clique_edges <- data.frame(from = expressologs_g$UGeneSpecies1,
+                           to = expressologs_g$UGeneSpecies2)
+
+clique_nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+
+clique_net <- graph_from_data_frame(clique_edges, directed = FALSE, vertices = clique_nodes)
+
+
+plot_1 <- plot(clique_net, 
+               layout =  layout_in_circle, 
+               vertex.size= 30,
+               vertex.color = c(rep(col_1, 3), rep(col_2, 3)),
+               vertex.frame.width = 2.5, 
+               edge.width = c(rep(thicc,3), rep(thin,2), rep(thicc,2), rep(thin, 2), thicc, rep(thin, 6)), 
+               edge.color = "#0E2841", 
+               # edge.label = c(1:15),
+               # vertex.label = c(1:6),
+               edge.lty = c(rep("solid",3), rep("dashed",2), rep("solid",2), rep("dashed", 2), "solid", rep("dashed", 6)),
+               margin = 0.1,
+               vertex.label = NA) + title(main = "Four-membered")
+
+ # Five-membered
+
+    g <- "OG0000001_35"
+  
+  expressologs_g <- five_membered_cliques %>% 
+    filter(cliqueID == g) 
+
+
+clique_edges <- data.frame(from = expressologs_g$UGeneSpecies1,
+                           to = expressologs_g$UGeneSpecies2)
+
+clique_nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+larger <- data.frame(name = c("Empty_1"))
+
+clique_nodes <- rbind(clique_nodes, larger)
+clique_net <- graph_from_data_frame(clique_edges, directed = FALSE, vertices = clique_nodes)
+
+
+plot_4 <- plot(clique_net, 
+               layout =  layout_in_circle, 
+               vertex.size= 30,
+               vertex.color = c(rep(col_1, 3), rep(col_2, 3)),
+               vertex.frame.width = 2.5, 
+               edge.width = 3, 
+               edge.color = "#0E2841", 
+               edge.lty = "solid", 
+               margin = 0.1, 
+               vertex.label = NA) + title(main = "Five-membered")
+
+g <- "OG0000001_91"
+
+expressologs_g <- six_membered_cliques %>% 
+  filter(cliqueID == g) 
+
+clique_edges <- data.frame(from = expressologs_g$UGeneSpecies1,
+                           to = expressologs_g$UGeneSpecies2)
+
+clique_nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+
+clique_net <- graph_from_data_frame(clique_edges, directed = FALSE, vertices = clique_nodes)
+
+
+plot_1 <- plot(clique_net, 
+               layout =  layout_in_circle, 
+               vertex.size= 30,
+               vertex.color = c(rep(col_1, 3), rep(col_2, 3)),
+               vertex.frame.width = 2.5, 
+               edge.width = c(rep(thicc,4), thin, rep(thicc,9),  thin), 
+               edge.color = "#0E2841", 
+               # edge.label = c(1:15),
+               # vertex.label = c(1:6),
+               edge.lty = c(rep("solid",4),"dashed", rep("solid", 9), "dashed"),
+               margin = 0.1,
+               vertex.label = NA) + title(main = "Five-membered")
+
+
+```
+
+
+## Six-membered cliques 
+<br>
+
+```{r }
+
+# Six-membered
+
+g <- "OG0000001_91"
+
+expressologs_g <- six_membered_cliques %>% 
+  filter(cliqueID == g) 
+
+clique_edges <- data.frame(from = expressologs_g$UGeneSpecies1,
+                           to = expressologs_g$UGeneSpecies2)
+
+clique_nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+
+clique_net <- graph_from_data_frame(clique_edges, directed = FALSE, vertices = clique_nodes)
+
+
+plot_1 <- plot(clique_net, 
+               layout =  layout_in_circle, 
+               vertex.size= 30,
+               vertex.color = c(rep(col_1, 3), rep(col_2, 3)),
+               vertex.frame.width = 2.5, 
+               edge.width = 3, 
+               edge.color = "#0E2841", 
+               edge.lty = "solid", 
+               margin = 0.1, 
+               vertex.label = NA) + title(main = "Six-membered")
+
+
+
+g <- "OG0000001_91"
+
+expressologs_g <- six_membered_cliques %>% 
+  filter(cliqueID == g) 
+
+clique_edges <- data.frame(from = expressologs_g$UGeneSpecies1,
+                           to = expressologs_g$UGeneSpecies2)
+
+clique_nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+
+clique_net <- graph_from_data_frame(clique_edges, directed = FALSE, vertices = clique_nodes)
+
+
+
+
+plot_2 <- 
+  plot(clique_net, 
+               layout =  layout_in_circle, 
+               vertex.size= 30,
+               vertex.color = c(rep(col_1, 3), rep(col_2, 3)),
+               vertex.frame.width = 2.5, 
+               edge.width = c(rep(thicc,2), rep(thin,3), thicc ,rep(thin, 6), rep(thicc, 3)), 
+               edge.color = "#0E2841", 
+               # edge.label = c(1:15),
+               # vertex.label = c(1:6),
+               edge.lty = c(rep("solid", 2), rep("dashed",3), "solid", rep("dashed", 6), rep("solid", 3)),
+               margin = 0.1,
+               vertex.label = NA) + title(main = "Differentiated")
+
+plot_3 <- plot(clique_net, 
+               layout =  layout_in_circle, 
+               vertex.size= 30,
+               vertex.color = c(rep(col_1, 3), rep(col_2, 3)),
+               vertex.frame.width = 2.5, 
+               edge.width = c(rep(thicc,3), rep(thin,2), thicc,thicc,thicc ,rep(thin, 4), rep(thicc, 3)), 
+               edge.color = "#0E2841", 
+               # edge.label = c(1:15),
+               # vertex.label = c(1:6),
+               edge.lty = c(rep("solid",3), rep("dashed",2), "solid","solid","solid" ,rep("dashed", 4), rep("solid", 3)),
+               margin = 0.1,
+               vertex.label = NA) + title(main = "Differentiated (with crossed pairs)")
+
+plot_3 <- plot(clique_net, 
+               layout =  layout_in_circle, 
+               vertex.size= 30,
+               vertex.color = c(rep(col_1, 3), rep(col_2, 3)),
+               vertex.frame.width = 2.5, 
+               edge.width = c(rep(thicc,4), rep(thin,1), thicc ,rep(thin, 6), rep(thicc, 3)), 
+               edge.color = "#0E2841", 
+               # edge.label = c(1:15),
+               # vertex.label = c(1:6),
+               edge.lty = c(rep("solid",4), rep("dashed",1), "solid", rep("dashed", 6), rep("solid", 3)),
+               margin = 0.1,
+               vertex.label = NA) + title(main = "Six-membered, other")
+
+
+```
+
+
+
+
+**Extras**
+
+```{r}
+
+g <- "OG0000001_91"
+
+expressologs_g <- six_membered_cliques %>% 
+  filter(cliqueID == g) 
+
+clique_edges <- data.frame(from = expressologs_g$UGeneSpecies1,
+                           to = expressologs_g$UGeneSpecies2)
+
+clique_nodes <- data.frame(name = unique(c(expressologs_g$UGeneSpecies1, expressologs_g$UGeneSpecies2)))
+
+clique_net <- graph_from_data_frame(clique_edges, directed = FALSE, vertices = clique_nodes)
+
+
+thicc <- 5
+thin <- 3
+
+plot(clique_net,
+     layout = layout_in_circle,
+     vertex.size= 20,
+     vertex.color = c(rep(col_1, 3), rep(col_2, 3)),
+     vertex.frame.width = 2,
+     vertex.frame.color = "grey20",
+     edge.width = c(rep(thicc,2), rep(thin,3), thicc ,rep(thin, 9)),
+     edge.color = "grey50",
+     edge.lty = c(rep("solid", 2), rep("dashed",3), "solid", rep("dashed", 9)),
+     margin = 0,
+     vertex.label = NA)
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

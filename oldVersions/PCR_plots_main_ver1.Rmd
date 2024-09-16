@@ -1,0 +1,230 @@
+---
+title: "PCA"
+author: "Ellen Dimmen Chapple"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: true
+    toc_float: true
+    theme: lumen
+editor_options:
+  chunk_output_type: console
+---
+
+
+
+
+```{r}
+
+library(tidyverse)
+theme_set(theme_classic())
+library(gplots)
+library(ggrepel)
+library(stats)
+
+```
+
+
+```{r}
+
+species_list <- c("Cher", "Asp", "Birch","Nor", "Scots", "Lodge") 
+colsamples <- c("#3D5A71","#FFB000", "#DC267F","#FE6100")
+cnclust = 4
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/",i,"Wood_transcriptomics_hm.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+  
+}
+i <- file_list_2[1]
+    expression_data <- read.delim(i) %>% 
+    select(contains("1."))
+    n <- ncol(expression_data)
+  
+  # Cluster samples
+  cdist <- dist(t(expression_data), method="euclidean")
+  chc <- hclust(cdist,method="ward.D2")
+  cdendro <- as.dendrogram(chc)
+
+
+    
+  order <- rep(0, n)
+  h <- colnames(expression_data)
+  z <- strsplit(as.character(h), "[.]")
+  h <- unlist(lapply(z,"[",2))
+  h <- as.integer(h)
+  k <- 1
+  
+  samples <- as.numeric(h)
+  
+  for(q in 1:max(samples)) {
+    for(j in 1:n) {
+      if (h[j] == q) {
+        order[j] = k
+        k <- k+1
+      }
+    }
+  }
+  
+  cdendro <- reorder(cdendro, order, agglo.FUN = mean)
+  chc <- as.hclust(cdendro) 
+  
+  
+  cct <- cutree(chc, k=cnclust)
+  
+  
+
+  
+  pc <- prcomp(t(expression_data))
+  
+  p <- cbind(pc$x, data.frame(Samples = rownames(pc$x), Clusters = as.factor(cct)))
+  
+  var.expl <- pc$sdev^2 / sum(pc$sdev^2)
+  species <- sapply(strsplit(i, "transcriptomicsForHeatmaps/"), "[",2)
+  species <- sapply(strsplit(species, "Wood"), "[",1)
+  
+  plot <- ggplot(p, aes(PC1, PC2, col = Clusters)) + 
+    geom_point(size = 5, alpha = 0.5) +
+    # geom_label_repel(aes(label = Samples), box.padding=0.03, point.padding=0.01, label.size=0.5, size=  4, max.overlaps = 10) +
+    scale_color_manual(values=colsamples) +
+    labs(title = species, x = paste0("PC1 (", round(var.expl[1], digits=2),")"), y = paste0("PC2 (", round(var.expl[2], digits=2),")") ) + theme( plot.title = element_text(hjust = 0.5, vjust = -30, size = 25, colour = "grey9", face = 3), axis.text = element_text(size = 20), axis.title = element_text(size = 25), legend.text = element_text(size = 20),legend.title = element_text(size = 22), legend.key.size = unit(1.2, "cm")) + guides(color = guide_legend(override.aes = list(size = 10)))
+   
+  print(plot)
+  
+#### Change the size of the legend!!
+
+
+
+```
+
+
+
+```{r}
+# Need to run code above for only one species in order for the legend to be obtained.
+
+library(cowplot)
+legend <- get_legend(plot + theme(legend.box.margin = margin(10, 0, 0, 6)))
+
+```
+
+
+
+```{r}
+
+species_list <- c("Cher", "Asp", "Birch","Nor", "Scots", "Lodge") 
+colsamples <- c("#FFB000", "#DC267F","#3D5A71","#FE6100")
+species_full_name <- c("Cherry", "Aspen", "Birch", "Norway spruce", "Scots pine", "Lodgepole pine")
+species_lat_name <- c("P. avium","P. tremula","B. pendula", "P. abies", "P. sylvestris","P. contorta" )
+cnclust = 4
+
+file_list_2 <- c()
+for (i in species_list){
+  
+  expr_name <- paste0("Data/DATA/transcriptomicsData/transcriptomicsForHeatmaps/",i,"Wood_transcriptomics_hm.txt")
+  file_list_2 <- append(file_list_2, expr_name, after = length(file_list_2))
+  
+}
+
+for(i in 1:length(file_list_2)){
+  
+  # i <- file_list_2[1]
+  file <- file_list_2[i]
+    expression_data <- read.delim(file) %>% 
+    select(contains("1."))
+    n <- ncol(expression_data)
+  
+  # Cluster samples
+  cdist <- dist(t(expression_data), method="euclidean")
+  chc <- hclust(cdist,method="ward.D2")
+  cdendro <- as.dendrogram(chc)
+
+
+    
+  order <- rep(0, n)
+  h <- colnames(expression_data)
+  z <- strsplit(as.character(h), "[.]")
+  h <- unlist(lapply(z,"[",2))
+  h <- as.integer(h)
+  k <- 1
+  
+  samples <- as.numeric(h)
+  
+  for(q in 1:max(samples)) {
+    for(j in 1:n) {
+      if (h[j] == q) {
+        order[j] = k
+        k <- k+1
+      }
+    }
+  }
+  
+  
+  cdendro <- reorder(cdendro, order, agglo.FUN = mean)
+  chc <- as.hclust(cdendro) 
+  cct <- cutree(chc, k=cnclust)
+  
+  ccol <- colsamples[cct]
+
+  
+  pc <- prcomp(t(expression_data))
+  
+  p <- cbind(pc$x, data.frame(Samples = rownames(pc$x), Clusters = as.factor(cct)))
+  
+  var.expl <- pc$sdev^2 / sum(pc$sdev^2)
+  species_long <- species_full_name[i]
+  species_short <- species_list[i]
+  latin_name <- species_lat_name[i]
+  
+  p1 <- ggplot(p, aes(PC1, PC2, col = Clusters)) + 
+    geom_point(size = 10, alpha = 0.8) +
+    # geom_label_repel(aes(label = Samples), box.padding=0.03, point.padding=0.01, label.size=0.5, size=  4, max.overlaps = 10) +
+    scale_color_manual(values=colsamples) +
+    labs(title = latin_name, x = paste0("PC1 (", round(var.expl[1], digits=2),")"), y = paste0("PC2 (", round(var.expl[2], digits=2),")") ) + theme(legend.position = "none", plot.title = element_text(vjust = 1.2, hjust = 0.5,size = 40, colour = "grey9", face = 3), axis.text = element_text(size = 40), axis.title = element_text(size = 40)) + scale_x_continuous(limits = c(-250,250), n.breaks = 3) + scale_y_continuous(limits = c(-250,250), n.breaks = 3)
+   
+  print(p1)
+  
+  new_name <- as.character(paste0("p_",species_short))
+  gdata::mv("p1", new_name)
+  
+}
+
+
+
+```
+
+
+
+```{r}
+# Two rows
+# grid <- plot_grid(p_Asp, NULL ,p_Birch, NULL,p_Cher,
+#                            NULL,NULL,NULL, NULL, NULL, 
+#                            p_Nor, NULL,p_Scots, NULL,p_Lodge,
+#                            rel_widths = c(1,0.2,1,0.2,1), 
+#                            rel_heights = c(1,0.2,1),
+#                            ncol = 5, nrow = 3)
+# 
+# plot_grid(grid, legend, rel_widths = c(1, 0.2))
+
+```
+
+
+```{r}
+
+# plot_grid(p_Cher, p_Asp)
+
+grid <- plot_grid(p_Asp,NULL, p_Birch,NULL, p_Cher,NULL, p_Nor, NULL,p_Scots, NULL,p_Lodge,NULL,
+                           nrow = 1, 
+                  rel_widths = rep(c(1,0.1), 6))
+
+# plot_grid(grid, legend, rel_widths = c(1, 0.2))
+
+grid
+
+# width: 4400 height: 800 
+
+```
+
