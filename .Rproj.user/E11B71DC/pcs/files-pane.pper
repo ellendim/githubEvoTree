@@ -1,9 +1,13 @@
 {
     "sortOrder": [
         {
+            "columnIndex": 4,
+            "ascending": false
+        },
+        {
             "columnIndex": 2,
             "ascending": true
         }
     ],
-    "path": "C:/Users/ellen/OneDrive - Norwegian University of Life Sciences/M60-BIAS/EvoTree/githubEvoTree"
+    "path": "C:/Users/ellen/OneDrive - Norwegian University of Life Sciences/M60-BIAS/EvoTree/githubEvoTree/.git"
 }
